@@ -58,7 +58,7 @@ function setBars(tr,n){
   renderTracks(); save();
   toast('「'+tr.name+'」→ '+n+' 小节（'+stepsOf(tr)+' 步）'+(grow&&n>1?'，第 1 小节已平铺到后面各小节':''));
 }
-const state={tracks:[],prog:[],progEdited:false};
+const state={tracks:[],prog:[],progEdited:false,progBars:1};
 const soloActive=()=>state.tracks.some(t=>t.solo);
 
 /* ---- 声部增删 ---- */
@@ -102,7 +102,9 @@ function save(){
         rootIdx,modeIdx,styleIdx,bpm,swingPct,volume,
         chordInst:chordInst||null,chordMute:!!chordMute,
         prog:(state.prog||[]).map(c=>({r:c.root,s:c.seventh?1:0,b:clamp(c.beats|0,1,64)})),
+        progBars:progBars(),
         progEdited:!!state.progEdited,
+        chordVol:chordVol,
         tracks:state.tracks.map(t=>({kind:t.kind,name:t.name,inst:t.inst,oct:t.oct,bars:barsOf(t),seq:t.seq,
           useq:(t.kind==='inst'&&Array.isArray(t.userSeq))?t.userSeq:null,
           vol:t.vol,pan:t.pan,mute:t.mute,solo:t.solo,follow:t.follow!==false,drum:t.drum,p:t.p}))
@@ -131,6 +133,10 @@ function loadSaved(){
     chordMute=!!d.chordMute;
     state.progEdited=!!d.progEdited;
     state.prog=migrateProg(d.prog);
+    const pb=d.progBars|0;
+    const psum=state.prog.reduce((a,c)=>a+(c.beats|0),0);
+    state.progBars=pb||clamp(Math.round(psum/4)||1,1,MAX_BARS);   // 旧档：按原进行的总拍数反推小节数
+    chordVol=(typeof d.chordVol==='number'&&d.chordVol>=0&&d.chordVol<=1)?d.chordVol:.8;
     state.tracks=d.tracks.slice(0,MAX_TRACKS).map(o=>{
       const t=makeTrack(o.kind,o.name,o.inst,o.oct);
       const bars=clamp(o.bars|0,1,MAX_BARS);

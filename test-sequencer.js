@@ -103,7 +103,8 @@ vm.createContext(sandbox);
 const expose=`
 ;globalThis.__T={state,SP_:()=>SP_,setStyle,optimizeMelody,setStep,setBars,fillBass,fillArp,fillPad,autoArrange,
   exportMidi,loadSaved,resetSeq,clearSeqs,clearTracksKeep,chordInstOf,randomProgression,fitProg,splitSeg,segLen,delSeg,setSegChord,
-  segOfStep,chordAtFor,progFor,degOfRow,scLen,stepsOf,barsOf,songBeats,songBars,refreshAll,save,DEMO_MEL,clearTrack,randomizeForTrack};`;
+  segOfStep,chordAtFor,progFor,degOfRow,scLen,stepsOf,barsOf,songBeats,songBars,refreshAll,save,DEMO_MEL,clearTrack,randomizeForTrack,
+  setProgBars,progBeats,makeTrack,progTiled};`;
 try{ vm.runInContext(js+expose,sandbox); }catch(e){ console.log('LOAD_FAIL:',e.stack.split('\n').slice(0,4).join('\n')); process.exit(1); }
 const T=sandbox.__T;
 let pass=0,fail=0;
@@ -208,14 +209,14 @@ T.state.prog=[{root:0,beats:4,seventh:false,tones:[0,(0+2)%L,(0+4)%L]},
               {root:3,beats:4,seventh:false,tones:[3,(3+2)%L,(3+4)%L]}];   // 确定性：2 段 × 4 拍
 T.fitProg();
 const beats=()=>T.state.prog.reduce((a,c)=>a+c.beats,0);
-chk('和弦铺满全曲（8 拍）',beats()===T.songBeats());
+chk('和弦铺满全曲（8 拍）',beats()===T.progBeats());
 const n0=T.state.prog.length;
 T.splitSeg(0);
-chk('拆分：段数 +1、总拍数不变',T.state.prog.length===n0+1&&beats()===T.songBeats());
+chk('拆分：段数 +1、总拍数不变',T.state.prog.length===n0+1&&beats()===T.progBeats());
 T.setSegChord(0,3,true);
 chk('换级数 + 七和弦',T.state.prog[0].root===3&&T.state.prog[0].seventh===true);
 T.delSeg(0); T.fitProg();
-chk('删除后仍铺满全曲',beats()===T.songBeats());
+chk('删除后仍铺满全曲',beats()===T.progBeats());
 const m5=T.state.tracks[0];
 T.setStep(m5,5,4,false);                            // 🎲 后手动拧一格 → 整条生成旋律+这一格成为新素材
 chk('🎲 后手动编辑重建素材快照',Array.isArray(m5.userSeq)&&m5.userSeq[5]===4);
@@ -225,7 +226,7 @@ T.loadSaved();
 const mel1=T.state.tracks[0];
 const anchors6={};
 (mel1.userSeq||[]).forEach((v,s)=>{ if(v>=0&&s%4===0) anchors6[s]=v; });
-chk('读回：bars / userSeq / 和弦段全还原',T.barsOf(mel1)===2&&Array.isArray(mel1.userSeq)&&mel1.userSeq.length===32&&beats()===T.songBeats()&&Object.keys(anchors6).length>=4);
+chk('读回：bars / userSeq / 和弦段全还原',T.barsOf(mel1)===2&&Array.isArray(mel1.userSeq)&&mel1.userSeq.length===32&&beats()===T.progBeats()&&Object.keys(anchors6).length>=4);
 let exOK=true; try{ T.exportMidi(); }catch(e){ exOK=false; }
 chk('导出 .mid 无异常',exOK);
 
@@ -263,12 +264,56 @@ chk('清空音序：和弦进行轨不动',JSON.stringify(T.state.prog.map(c=>[c
 const barsBefore=T.songBars();
 T.clearTracksKeep();
 chk('清空声部：只剩 1 个空声部',T.state.tracks.length===1&&T.state.tracks[0].seq.every(v=>v===-1));
-chk('清空声部：空声部保持原曲长度（'+barsBefore+' 小节）',T.barsOf(T.state.tracks[0])===barsBefore);
+chk('清空声部：新空声部 1 小节，和弦轨不受影响',T.barsOf(T.state.tracks[0])===1);
 chk('清空声部：和弦进行轨逐段原样',JSON.stringify(T.state.prog.map(c=>[c.root,c.beats,c.seventh]))===preProg);
 /* 7d 清空声部后重摆一个音 + 优化不崩 */
 T.setStep(T.state.tracks[0],0,5,false);
 const okOpt=T.optimizeMelody(T.state.tracks[0]);
 chk('清空声部后优化不崩且有音',okOpt===true&&T.state.tracks[0].seq.some(v=>v>=0));
+
+console.log('== 8. 和弦轨长度独立 + ♻ 跟随和弦生效 ==');
+/* 8a 声部小节数变化，和弦轨不动 */
+T.setProgBars(2);
+const pSnap=JSON.stringify(T.state.prog.map(c=>[c.root,c.beats]));
+const mel8=T.state.tracks[0];
+T.setBars(mel8,1);
+chk('声部缩到 1 小节，和弦轨仍是 2 小节',T.barsOf(mel8)===1&&T.progBeats()===8
+  &&JSON.stringify(T.state.prog.map(c=>[c.root,c.beats]))===pSnap);
+T.setBars(mel8,4);
+chk('声部加到 4 小节，和弦轨仍是 2 小节',T.barsOf(mel8)===4&&T.progBeats()===8
+  &&JSON.stringify(T.state.prog.map(c=>[c.root,c.beats]))===pSnap);
+/* 8b 和弦轨 1 小节也能放 4 个和弦（每段 1 拍），并循环覆盖更长的声部 */
+T.setProgBars(1);
+T.state.prog=[0,1,2,3].map(r=>({root:r,beats:1,seventh:false}));
+T.fitProg();
+chk('1 小节和弦轨放下 4 个和弦（各 1 拍）',T.state.prog.length===4
+  &&T.state.prog.every(c=>c.beats===1&&Array.isArray(c.tones)&&c.tones.length>=3));
+const caLong=T.chordAtFor(T.state.prog,64);
+chk('4 小节声部：和弦循环平铺覆盖全部 64 步',caLong.length===64&&caLong.every(s=>s&&s.size>=3));
+chk('和弦轨独立循环：第 5 拍回到第 1 个和弦',T.segOfStep(16)===0&&T.segOfStep(20)===1);
+/* 8c 跟随和弦生效：跟随声部贴和弦轨；独立声部贴自己推导的和声 */
+const tf=T.makeTrack('inst','跟随测试','piano',0);
+tf.follow=true; T.resetSeq(tf);
+chk('跟随声部：progFor 即和弦进行轨',T.progFor(tf)===T.state.prog);
+T.optimizeMelody(tf);
+const caF=T.chordAtFor(T.state.prog,T.stepsOf(tf));
+chk('跟随声部：✨ 后强拍全落在和弦轨和弦内',
+  tf.seq.every((r,s)=>r===-1||s%4!==0||caF[s].has(T.degOfRow(r))));
+const ti=T.makeTrack('inst','独立测试','piano',0);
+ti.follow=false; T.resetSeq(ti);
+for(let s=0;s<16;s+=4) T.setStep(ti,s,[0,3,1,4][s/4],false);   // 自己的锚点
+const indep=T.progFor(ti);
+chk('独立声部：progFor 返回自行推导的和声（非和弦轨对象）',Array.isArray(indep)&&indep!==T.state.prog);
+T.optimizeMelody(ti);
+const caI=T.chordAtFor(T.progFor(ti),T.stepsOf(ti));
+chk('独立声部：✨ 后非锚点强拍落在自己推导的和弦内',
+  ti.seq.every((r,s)=>r===-1||s%4!==0||(ti.userSeq&&ti.userSeq[s]>=0)||caI[s].has(T.degOfRow(r))));
+/* 8d 存档含 progBars / chordVol，读回还原 */
+T.save();
+const sv8=JSON.parse(store['polyseq.v7']);
+chk('存档含 progBars / chordVol',sv8.progBars===1&&typeof sv8.chordVol==='number');
+T.loadSaved();
+chk('读回：progBars 还原为 1',T.progBeats()===4);
 
 console.log('\n=== '+(fail?fail+' 项失败':'全部通过')+'（'+pass+' 通过 / '+fail+' 失败）===');
 process.exit(fail?1:0);

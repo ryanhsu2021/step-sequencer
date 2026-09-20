@@ -7,6 +7,7 @@
 const DEMO_MEL=[5,-1,4,3, 2,-1,1,2, 4,-1,3,2, 3,4,5,7];
 function seedDefault(){
   busCache.clear();
+  state.progBars=2;                                  // 和弦轨默认 2 小节（8 拍），与声部小节数无关
   state.prog=randomProgression(); state.progEdited=false;
   const mel=makeTrack('inst','主旋律',(SP_.mel&&SP_.mel[0])||'epiano',0);
   mel.seq=DEMO_MEL.slice();
@@ -30,16 +31,15 @@ function clearSeqs(){
   renderTracks(); save();
   toast('已清空所有声部的音序（音色、小节数与和弦进行轨保留）');
 }
-/* 清空声部：删除全部声部，只保留和弦进行轨（自动留一个空声部，并保持原曲长度让和弦轨原样不动） */
+/* 清空声部：删除全部声部，只保留和弦进行轨（其长度独立，自动留一个空声部方便重新开始） */
 function clearTracksKeep(){
-  const bars=songBars();
   busCache.clear();
   state.tracks=[];
   const t=makeTrack('inst');
-  t.bars=bars; resetSeq(t); t.name='主旋律';
+  t.name='主旋律';
   state.tracks=[t];
   recolor(); save(); renderTracks();
-  toast('已删除所有声部，只保留和弦进行轨（留了一个 '+bars+' 小节的空声部）');
+  toast('已删除所有声部，只保留和弦进行轨（留了一个空声部，和弦进行原样保留）');
 }
 /* ============ 控件接线 ============ */
 $('bpm').addEventListener('input',e=>{bpm=+e.target.value;$('bpmVal').textContent=bpm;save();});

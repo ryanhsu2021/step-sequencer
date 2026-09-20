@@ -29,7 +29,7 @@ function schedulerTick(){
   while(nextNoteTime<audioCtx.currentTime+.12){
     scheduleStep(currentStep,nextNoteTime);
     nextNoteTime+=stepDur();
-    currentStep=(currentStep+1)%songSteps();
+    currentStep=(currentStep+1)%Math.max(songSteps(),progSteps());  // 循环长度取声部与和弦轨的较长者
   }
 }
 const playBtn=$('playBtn');

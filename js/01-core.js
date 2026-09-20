@@ -16,6 +16,10 @@ const stepsOf=tr=>barsOf(tr)*BAR;
 const songBars=()=>state.tracks.reduce((m,t)=>Math.max(m,barsOf(t)),1);
 const songSteps=()=>songBars()*BAR;
 const songBeats=()=>songBars()*4;                       // 1 拍 = 4 步
+/* 和弦进行轨拥有独立长度（不随声部小节数变化）：state.progBars 小节 */
+const progBars=()=>clamp(state.progBars|0||1,1,MAX_BARS);
+const progSteps=()=>progBars()*BAR;
+const progBeats=()=>progBars()*4;
 /* 变长时把原有内容平铺重复（2 小节默认＝第 1 小节的复制），变短时保留前面 */
 function tileArr(a,n){
   const src=(Array.isArray(a)&&a.length)?a:[-1];

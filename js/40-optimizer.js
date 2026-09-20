@@ -76,17 +76,29 @@ function styleRootBias(q,d){
   for(const pl of plans) pl.forEach((deg,i)=>{ if(deg%scLen()===d) b+= (i<2? .28:.42); });
   return b*(q?1.1:.85);
 }
-/* 把和弦段展开成「每步属于哪个和弦」的集合数组（长度 = 声部步数，超出部分沿用最后一段） */
+/* 把和弦进行循环平铺到 n 步（和弦轨长度与声部无关：短了就循环重复，超出部分截断） */
+function progTiled(prog,n){
+  const base=(Array.isArray(prog)&&prog.length)?prog:[mkChord(0,1,false)];
+  const out=[]; let s=0,i=0;
+  while(s<n&&i<base.length*8){
+    const c=base[i%base.length];
+    const span=Math.min(Math.max(1,c.beats|0)*4,n-s);
+    out.push({root:c.root,seventh:c.seventh,tones:c.tones,beats:Math.max(1,Math.round(span/4))});
+    s+=span; i++;
+  }
+  if(!out.length) out.push({root:0,seventh:false,tones:chordTones(0,!!SP_.seventh),beats:Math.max(1,Math.round(n/4))});
+  return out;
+}
+/* 把和弦段展开成「每步属于哪个和弦」的集合数组（和弦轨比声部短时循环平铺，比声部长时截断） */
 function chordAtFor(prog,n){
   const a=new Array(n);
   let s=0;
-  for(const c of prog){
+  for(const c of progTiled(prog,n)){
     const set=new Set(c.tones);
-    for(let k=0;k<c.beats*4&&s+k<n;k++) a[s+k]=set;
+    for(let k=0;k<c.beats*4&&s<n;k++) a[s+k]=set;
     s+=c.beats*4;
-    if(s>=n) break;
   }
-  const fb=new Set(((prog[prog.length-1]||{}).tones)||[0]);
+  const fb=new Set(((Array.isArray(prog)?prog[prog.length-1]:null)||{tones:[0]}).tones||[0]);
   for(let i=0;i<n;i++) if(!a[i]) a[i]=fb;
   return a;
 }

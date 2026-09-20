@@ -28,6 +28,7 @@ const PAT_ORD =()=>patLib(SP_.arpOrders,ARP_ORDERS);
 function fillBass(t,prog){
   const L=scLen(), step3=L>=7?2:1, step5=L>=7?4:3, lib=PAT_BASS();
   const n=stepsOf(t);
+  prog=progTiled(prog,n);                             // 和弦轨比声部短 → 循环平铺
   t.seq=new Array(n).fill(-1);
   let base=0;
   for(const ch of prog){                              // 每段和弦各配一条低音节奏型
@@ -53,6 +54,7 @@ function fillArp(t,prog){
   const orders=PAT_ORD(); const order=orders[(Math.random()*orders.length)|0];
   const center=clamp(Math.round(SP_.center-1+(Math.random()<.5?0:1)),2,6);
   const n=stepsOf(t);
+  prog=progTiled(prog,n);
   t.seq=new Array(n).fill(-1);
   let base=0;
   for(const ch of prog){
@@ -72,6 +74,7 @@ function fillArp(t,prog){
 function fillPad(t,prog){
   const center=clamp(Math.round(SP_.center-1),2,6);
   const n=stepsOf(t);
+  prog=progTiled(prog,n);
   t.seq=new Array(n).fill(-1);
   let base=0;
   for(const ch of prog){

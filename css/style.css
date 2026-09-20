@@ -91,6 +91,13 @@ input[type=range]:hover::-webkit-slider-thumb{transform:scale(1.15)}
   border-radius:999px;padding:6px 10px;outline:none;cursor:pointer;transition:.14s;max-width:150px;
 }
 .cc-inst:hover{background:#fff;border-color:#fff}
+/* 和弦卡上的小节 / 音量控件：墨色底专用配色 */
+.cc-ctl{display:flex;gap:7px;align-items:center;flex:none}
+.cc-ctl .chip{background:rgba(255,255,255,.08);color:#fff}
+.cc-ctl .seg-b:hover{background:rgba(255,255,255,.24)}
+.cc-ctl .seg-b.on{background:#fff;color:#141414}
+.cc-ctl input[type=range]::-webkit-slider-runnable-track{background:rgba(255,255,255,.26)}
+.cc-ctl input[type=range]::-webkit-slider-thumb{background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.4)}
 .cc-bars{display:flex;flex-wrap:wrap;gap:8px;align-items:stretch}
 .cseg{
   flex:1 1 104px;min-width:104px;text-align:left;cursor:pointer;position:relative;

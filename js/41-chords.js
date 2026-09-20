@@ -8,9 +8,9 @@
    ============================================================ */
 const ROMAN=['I','II','III','IV','V','VI','VII','VIII'];
 const PLAN_LIB=()=>SP_.prog||PROG_PLANS[modeIdx]||PROG_PLANS[0];
-/* 按当前风格取一条进行，铺满全曲拍数（可反向 / 对调开头 / 合并出长和弦）→ 每次不同 */
+/* 按当前风格取一条进行，铺满和弦轨自己的拍数（可反向 / 对调开头 / 合并出长和弦）→ 每次不同 */
 function randomProgression(){
-  const total=songBeats(), L=scLen();
+  const total=progBeats(), L=scLen();
   let plan=pick(PLAN_LIB()).slice().map(d=>(((d|0)%L)+L)%L);
   if(Math.random()<.4) plan=plan.slice().reverse();
   if(plan.length>=2&&Math.random()<.28){ const t=plan[0]; plan[0]=plan[1]; plan[1]=t; }
@@ -28,9 +28,9 @@ function randomProgression(){
   if(out.length>1&&Math.random()<.3){ const a=out[out.length-2],b=out[out.length-1]; a.beats+=b.beats; out.pop(); }
   return out.map(c=>mkChord(c.root,c.beats,c.seventh));
 }
-/* 和弦轨长度对齐到全曲拍数：变长时把原进行【整段循环铺满】，变短时从尾部削 */
+/* 和弦轨长度对齐到自己的拍数（state.progBars，独立于声部小节数）：变长时把原进行【整段循环铺满】，变短时从尾部削 */
 function fitProg(){
-  const total=songBeats();
+  const total=progBeats();
   let p=(Array.isArray(state.prog)?state.prog:[])
     .filter(c=>c&&c.root!=null)
     .map(c=>({root:((((c.root|0)%scLen())+scLen())%scLen()),seventh:!!c.seventh,beats:clamp(c.beats|0,1,64)}));
@@ -80,20 +80,28 @@ function progFor(tr){
   return has?deriveProgression(tr.seq):randomProgression();
 }
 const ensureProg=()=>{ fitProg(); return state.prog; };
+/* 改和弦轨自己的小节数（1–8），与声部小节数无关 */
+function setProgBars(n){
+  n=clamp(n|0,1,MAX_BARS);
+  if(n===progBars()) return;
+  state.progBars=n; chordEdit=null;
+  fitProg(); renderChord(); save();
+  toast('和弦进行轨 → '+n+' 小节（'+progBeats()+' 拍，与声部小节数无关）');
+}
 function setProg(p,edited){
   state.prog=p; state.progEdited=!!edited; chordEdit=null;
   fitProg(); renderChord(); save();
 }
-/* ---- 和弦进行轨发声：播放时每拍触发当前和弦，音色可选（默认跟风格） ---- */
-let chordInst='', chordMute=false;
+/* ---- 和弦进行轨发声：播放时每拍触发当前和弦，音色 / 音量可选（默认跟风格） ---- */
+let chordInst='', chordMute=false, chordVol=.8;
 const chordInstOf=()=>chordInst||(SP_.chordI&&SP_.chordI[0])||'epiano';
 function playChordSeg(ch,time){
   try{
     if(!audioCtx||chordMute) return;
-    const inst=chordInstOf(), t0=time+.012;
+    const inst=chordInstOf(), t0=time+.012, g=.2*chordVol;
     ch.tones.forEach((d,i)=>{
       const r=rowForDegreeNear(d,4+i);
-      (VOICE[inst]||VOICE.epiano)(440*Math.pow(2,(rowMidi(r,0)-69)/12),t0+i*.02,masterGain,.16,stepDur()*3.6);
+      (VOICE[inst]||VOICE.epiano)(440*Math.pow(2,(rowMidi(r,0)-69)/12),t0+i*.02,masterGain,g,stepDur()*3.6);
     });
   }catch(e){}
 }

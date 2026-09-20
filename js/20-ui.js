@@ -69,6 +69,8 @@ function segRange(i){
 }
 function segOfStep(g){
   const p=state.prog; if(!p.length) return -1;
+  const cyc=progSteps();                             // 和弦轨按自己的长度独立循环
+  g=((g%cyc)+cyc)%cyc;
   let acc=0;
   for(let i=0;i<p.length;i++){ acc+=p[i].beats*4; if(g<acc) return i; }
   return p.length-1;
@@ -82,8 +84,9 @@ function renderChord(){
     '<span class="cc-icon">🎹</span>'+
     '<span class="cc-title">和弦进行轨</span>'+
     '<span class="cc-sub">'+STYLE().name+' · '+ROOT_NAMES[rootIdx]+' '+MODES[modeIdx].name+
-      ' · '+songBars()+' 小节 / '+songBeats()+' 拍 · '+state.prog.length+' 个和弦'+
+      ' · '+progBars()+' 小节 / '+progBeats()+' 拍 · '+state.prog.length+' 个和弦'+
       (state.progEdited?' · 手动':' · 跟随风格')+'</span>'+
+    '<span class="cc-ctl"></span>'+
     '<div class="cc-btns">'+
       '<button class="cc-btn" data-act="rand" title="按当前风格再随机取一条进行">🎲 随机同风格</button>'+
       '<button class="cc-btn" data-act="from" title="按现有旋律反推一条和声">⤵ 从旋律推导</button>'+
@@ -109,6 +112,12 @@ function renderChord(){
       toast('⤵ 已按「'+mel.name+'」的旋律推导和声');
     }
   }));
+  /* 和弦轨自己的小节数（与声部无关）+ 音量（无声像） */
+  const ctl=head.querySelector('.cc-ctl');
+  if(ctl){
+    ctl.appendChild(chipSeg('小节',[1,2,3,4,8],progBars(),n=>setProgBars(n)));
+    ctl.appendChild(chipRange('音量',0,100,Math.round(chordVol*100),v=>v,x=>{chordVol=x/100;save();}));
+  }
   const ciSel=head.querySelector('select.cc-inst');
   if(ciSel){
     fillInstSelect(ciSel,chordInstOf());
