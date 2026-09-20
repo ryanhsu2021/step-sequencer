@@ -10,23 +10,34 @@
 <div class="app">
   <header class="bar">
     <div class="transport">
-      <button id="playBtn" class="btn primary">▶ 播放</button>
-      <label class="tctl style">风格<select id="styleSel" title="整体音乐风格：和弦进行、优化旋律与一键编配都按它生成"></select></label>
+      <div class="tgroup">
+        <button id="playBtn" class="btn primary">▶ 播放</button>
+        <label class="tctl style">风格<select id="styleSel" title="整体音乐风格：和弦进行、优化旋律与一键编配都按它生成"></select></label>
+      </div>
       <span class="sep"></span>
-      <label class="tctl">BPM<input type="range" id="bpm" min="60" max="200" value="112"><b id="bpmVal">112</b></label>
-      <label class="tctl">摇摆<input type="range" id="swing" min="0" max="100" value="0"><b id="swingVal">0%</b></label>
-      <label class="tctl">音量<input type="range" id="vol" min="0" max="100" value="80"><b id="volVal">80</b></label>
-      <label class="tctl" title="总输出混响（作用于所有声部与和弦声）">混响<select id="revSel"></select><input type="range" id="revMix" min="0" max="100" value="100" title="混响强度"><b id="revMixVal">100%</b></label>
+      <div class="tgroup">
+        <label class="tctl">BPM<input type="range" id="bpm" min="60" max="200" value="112"><b id="bpmVal">112</b></label>
+        <label class="tctl">摇摆<input type="range" id="swing" min="0" max="100" value="0"><b id="swingVal">0%</b></label>
+        <label class="tctl">音量<input type="range" id="vol" min="0" max="100" value="80"><b id="volVal">80</b></label>
+      </div>
+      <div class="tgroup">
+        <label class="tctl" title="总输出混响（作用于所有声部与和弦声）">混响<select id="revSel"></select><input type="range" id="revMix" min="0" max="100" value="100" title="混响强度"><b id="revMixVal">100%</b></label>
+      </div>
       <span class="sep"></span>
-      <select id="rootSel" title="主音"></select>
-      <select id="modeSel" title="调式"></select>
+      <div class="tgroup">
+        <select id="rootSel" title="主音"></select>
+        <select id="modeSel" title="调式"></select>
+      </div>
       <span class="sep"></span>
-      <select id="midiOutSel" title="实时 MIDI 输出设备"></select>
-      <button id="exportBtn" class="btn" title="导出多轨标准 MIDI 文件">⬇ .mid</button>
-      <span class="spacer"></span>
-      <button id="arrangeBtn" class="btn accent" title="按和弦进行轨补齐贝斯 / 和弦音型 / 铺底 / 鼓组">🎼 一键编配</button>
-      <button id="clearSeqBtn" class="btn ghost" title="清空所有声部的音序（声部、音色、小节数与和弦进行轨保留）">清空音序</button>
-      <button id="clearTracksBtn" class="btn ghost" title="删除所有声部，只保留和弦进行轨（自动留一个空声部）">清空声部</button>
+      <div class="tgroup">
+        <select id="midiOutSel" title="实时 MIDI 输出设备"></select>
+        <button id="exportBtn" class="btn" title="导出多轨标准 MIDI 文件">⬇ .mid</button>
+      </div>
+      <div class="tgroup actions">
+        <button id="arrangeBtn" class="btn accent" title="按和弦进行轨补齐贝斯 / 和弦音型 / 铺底 / 鼓组">🎼 一键编配</button>
+        <button id="clearSeqBtn" class="btn ghost" title="清空所有声部的音序（声部、音色、小节数与和弦进行轨保留）">清空音序</button>
+        <button id="clearTracksBtn" class="btn ghost" title="删除所有声部，只保留和弦进行轨（自动留一个空声部）">清空声部</button>
+      </div>
     </div>
   </header>
 
