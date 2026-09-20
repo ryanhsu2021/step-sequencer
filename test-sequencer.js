@@ -291,23 +291,14 @@ chk('1 小节和弦轨放下 4 个和弦（各 1 拍）',T.state.prog.length===4
 const caLong=T.chordAtFor(T.state.prog,64);
 chk('4 小节声部：和弦循环平铺覆盖全部 64 步',caLong.length===64&&caLong.every(s=>s&&s.size>=3));
 chk('和弦轨独立循环：第 5 拍回到第 1 个和弦',T.segOfStep(16)===0&&T.segOfStep(20)===1);
-/* 8c 跟随和弦生效：跟随声部贴和弦轨；独立声部贴自己推导的和声 */
-const tf=T.makeTrack('inst','跟随测试','piano',0);
-tf.follow=true; T.resetSeq(tf);
-chk('跟随声部：progFor 即和弦进行轨',T.progFor(tf)===T.state.prog);
+/* 8c 和声来源统一：✨/🎼 恒用和弦进行轨（progFor 无参数化） */
+const tf=T.makeTrack('inst','和声测试','piano',0);
+T.resetSeq(tf);
+chk('progFor 恒等于和弦进行轨',T.progFor()===T.state.prog);
 T.optimizeMelody(tf);
 const caF=T.chordAtFor(T.state.prog,T.stepsOf(tf));
-chk('跟随声部：✨ 后强拍全落在和弦轨和弦内',
+chk('✨ 后强拍全落在和弦轨和弦内',
   tf.seq.every((r,s)=>r===-1||s%4!==0||caF[s].has(T.degOfRow(r))));
-const ti=T.makeTrack('inst','独立测试','piano',0);
-ti.follow=false; T.resetSeq(ti);
-for(let s=0;s<16;s+=4) T.setStep(ti,s,[0,3,1,4][s/4],false);   // 自己的锚点
-const indep=T.progFor(ti);
-chk('独立声部：progFor 返回自行推导的和声（非和弦轨对象）',Array.isArray(indep)&&indep!==T.state.prog);
-T.optimizeMelody(ti);
-const caI=T.chordAtFor(T.progFor(ti),T.stepsOf(ti));
-chk('独立声部：✨ 后非锚点强拍落在自己推导的和弦内',
-  ti.seq.every((r,s)=>r===-1||s%4!==0||(ti.userSeq&&ti.userSeq[s]>=0)||caI[s].has(T.degOfRow(r))));
 /* 8d 存档含 progBars / chordVol，读回还原 */
 T.save();
 const sv8=JSON.parse(store['polyseq.v7']);
@@ -330,41 +321,41 @@ chk('连点 12 次：小节数始终为 3（12 拍）且和弦铺满',ok9,why9);
 T.setProgBars(1);
 chk('手动改回 1 小节立即生效',T.progBeats()===4);
 
-console.log('== 10. 跟随开关决定吸附行为：开→调和弦跟着变；关→完全不动 ==');
+console.log('== 10. 「⟳ 对齐和弦」纯手动触发：点才吸附，调和弦轨不自动挪声部 ==');
 T.setProgBars(1);
 T.state.prog=[{root:0,beats:4,seventh:false}];
 T.fitProg();                                      // 全曲一个和弦
 const ca0=T.chordAtFor(T.state.prog,16);
 const badRows=[]; for(let r=0;r<8;r++) if(!ca0[0].has(T.degOfRow(r))) badRows.push(r);
 chk('存在和弦外的行可摆放',badRows.length>=2,'badRows='+badRows.length);
-const trh=T.makeTrack('inst','跟随测试','piano',0);
-trh.follow=true;                                  // ♻ 跟随和弦
+const trh=T.makeTrack('inst','对齐测试','piano',0);
 T.state.tracks.push(trh);                         // makeTrack 不入列：手动加入模拟真实声部
 T.resetSeq(trh);
 badRows.slice(0,4).forEach((r,k)=>T.setStep(trh,k*4,r,false));
-chk('吸附前确有音符在和弦外',trh.seq.some((r,s)=>r>=0&&!ca0[s].has(T.degOfRow(r))));
-T.randomSameStyle();                              // 🎲 换一条 → 内部触发 reharmonizeAll
-const ca10=T.chordAtFor(T.state.prog,T.stepsOf(trh));
-chk('跟随开 + 🎲 换和弦：音符全部落进新和弦',trh.seq.every((r,s)=>r===-1||ca10[s].has(T.degOfRow(r))));
-chk('跟随开：userSeq 素材同步挪动（✨ 不会把旧音变回来）',
-  (trh.userSeq||[]).every((r,s)=>r===-1||ca10[s].has(T.degOfRow(r))));
-chk('吸附保留旋律轮廓（不是全吸成同一个音）',new Set(trh.seq.filter(v=>v>=0)).size>=2);
-/* 关闭跟随：再换和弦，音序必须原样不动 */
+chk('对齐前确有音符在和弦外',trh.seq.some((r,s)=>r>=0&&!ca0[s].has(T.degOfRow(r))));
+/* 调和弦轨（🎲 连换两次）不触发任何自动吸附 */
 const seqKeep=trh.seq.slice(), userKeep=(trh.userSeq||[]).slice();
-trh.follow=false;                                 // ◌ 独立和声
-T.randomSameStyle();
-T.randomSameStyle();                              // 连换两次，确保有变化机会
-const ca11=T.chordAtFor(T.state.prog,T.stepsOf(trh));
-chk('跟随关 + 🎲 换和弦：音序一个音都不动',
+T.randomSameStyle(); T.randomSameStyle();
+chk('调和弦轨不自动挪声部：音序一个音都不动',
   seqKeep.every((r,s)=>trh.seq[s]===r)&&userKeep.every((r,s)=>(trh.userSeq||[])[s]===r));
-chk('关闭期间音序里仍允许保留和弦外音（预期行为）',
-  trh.seq.some((r,s)=>r>=0&&!ca11[s].has(T.degOfRow(r))));
-/* 重新开启跟随：点按钮时立刻吸附 */
-const outBefore=trh.seq.filter((r,s)=>r>=0&&!ca11[s].has(T.degOfRow(r))).length;
-chk('重新开启前确有和弦外音待吸附',outBefore>=1);
-trh.follow=true; T.reharmonizeTrack(trh); T.save();
-const ca12=T.chordAtFor(T.state.prog,T.stepsOf(trh));
-chk('重新开启（点跟随按钮）：音序立刻对齐到当前和弦',trh.seq.every((r,s)=>r===-1||ca12[s].has(T.degOfRow(r))));
+/* 点「⟳ 对齐和弦」（reharmonizeTrack）→ 立刻吸附一次 */
+const okAlign=T.reharmonizeTrack(trh);
+const caA=T.chordAtFor(T.state.prog,T.stepsOf(trh));
+chk('点「⟳ 对齐和弦」返回「有改动」',okAlign===true);
+chk('对齐后音符全部落进当前和弦',trh.seq.every((r,s)=>r===-1||caA[s].has(T.degOfRow(r))));
+chk('对齐后 userSeq 素材同步挪动（✨ 不会把旧音变回来）',
+  (trh.userSeq||[]).every((r,s)=>r===-1||caA[s].has(T.degOfRow(r))));
+chk('对齐保留旋律轮廓（不是全吸成同一个音）',new Set(trh.seq.filter(v=>v>=0)).size>=2);
+/* 再调一次和弦轨，音序保持上次对齐结果不动；再点一次才重新吸附 */
+const seqKeep2=trh.seq.slice();
+T.randomSameStyle();
+chk('再次调和弦轨：音序仍不动',seqKeep2.every((r,s)=>trh.seq[s]===r));
+T.reharmonizeTrack(trh);
+const caB=T.chordAtFor(T.state.prog,T.stepsOf(trh));
+chk('再次点对齐：音序立刻吸附到新和弦',trh.seq.every((r,s)=>r===-1||caB[s].has(T.degOfRow(r))));
+/* 已全在和弦内时，对齐返回 false（无需改动） */
+const okNoop=T.reharmonizeTrack(trh);
+chk('音符已全在和弦内：再点对齐无改动',okNoop===false);
 T.state.tracks.pop();                             // 断言完移除，避免污染后续用例
 
 console.log('\n=== '+(fail?fail+' 项失败':'全部通过')+'（'+pass+' 通过 / '+fail+' 失败）===');

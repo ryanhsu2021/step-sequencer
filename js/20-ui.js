@@ -24,8 +24,7 @@ function trackDesc(tr){
       +' · '+hits+' hits';
   }
   const lo=noteName(rowMidi(ROWS-1,tr.oct)), hi=noteName(rowMidi(0,tr.oct));
-  return INST_NAME(tr.inst)+' · '+barTxt+(tr.oct?' · '+(tr.oct>0?'+':'')+tr.oct+'八度':'')+' · '+lo+'–'+hi
-    +(tr.follow!==false?' · ♻ 跟随和弦':' · ◌ 独立和声');
+  return INST_NAME(tr.inst)+' · '+barTxt+(tr.oct?' · '+(tr.oct>0?'+':'')+tr.oct+'八度':'')+' · '+lo+'–'+hi;
 }
 function chipRange(label,min,max,val,fmt,oninput){
   const l=document.createElement('label'); l.className='chip';
@@ -230,7 +229,7 @@ function buildPicker(){
 function setSegChord(i,root,seventh){
   const p=fitProg(), c=p[i]; if(!c) return;
   p[i]=mkChord(root,c.beats,seventh===undefined?c.seventh:seventh);
-  state.progEdited=true; reharmonizeAll(); save(); audChord(p[i]);
+  state.progEdited=true; save(); audChord(p[i]);
 }
 function splitSeg(i){
   const p=fitProg(), c=p[i]; if(!c) return;
@@ -238,7 +237,7 @@ function splitSeg(i){
   const a=Math.floor(c.beats/2), b=c.beats-a;
   p.splice(i,1,mkChord(c.root,a,c.seventh),mkChord(c.root,b,c.seventh));
   state.progEdited=true; chordEdit=i+1;
-  reharmonizeAll(); renderChord(); save();
+  renderChord(); save();
   toast('已插入第 '+(i+2)+' 个和弦——点它挑个新和弦');
 }
 function segLen(i,d){
@@ -247,7 +246,7 @@ function segLen(i,d){
   if(!nb){ toast('整曲只有这一个和弦'); return; }
   if(d>0){ if(nb.beats<2){ toast('相邻的和弦只剩 1 拍，给不出更多'); return; } c.beats++; nb.beats--; }
   else{ if(c.beats<2){ toast('最短 1 拍'); return; } c.beats--; nb.beats++; }
-  state.progEdited=true; reharmonizeAll(); renderChord(); save();
+  state.progEdited=true; renderChord(); save();
 }
 function delSeg(i){
   const p=fitProg();
@@ -255,7 +254,7 @@ function delSeg(i){
   const c=p[i], nb=p[i+1]||p[i-1];
   nb.beats+=c.beats; p.splice(i,1);
   if(chordEdit!=null) chordEdit=chordEdit>=p.length?null:chordEdit;
-  state.progEdited=true; reharmonizeAll(); renderChord(); save();
+  state.progEdited=true; renderChord(); save();
   toast('已删除一个和弦，拍数并入相邻段');
 }
 
@@ -331,28 +330,17 @@ function buildCard(tr,i){
       meta.appendChild(more);
     }
   }else{
-    /* 是否跟随「和弦进行轨」：开着 → ✨/🎼 用和弦轨和声，且调和弦轨时本声部音高跟着挪；
-       关着 → 完全独立，调和弦轨不影响它 */
-    const followOn=()=>tr.follow!==false;
+    /* 「⟳ 对齐和弦」：一次性触发——点一下把本声部现有音符吸附到当前和弦进行轨；
+       没有持久状态，和弦轨之后再变想重新对齐就再点一次。✨/🎼 恒用和弦轨做和声 */
     const fol=document.createElement('button');
     fol.type='button';
-    const paint=()=>{
-      const o=followOn();
-      fol.className='chip btn-like'+(o?' on':'');
-      fol.textContent=o?'♻ 跟随和弦':'◌ 独立和声';
-      fol.title=o?'本声部跟随和弦进行轨：调整和弦轨时音高自动对齐；点击关闭则不再跟随':'独立和声：调整和弦轨不影响本声部；点击开启会立刻把现有音符对齐到当前和弦';
-    };
-    paint();
+    fol.className='chip btn-like';
+    fol.textContent='⟳ 对齐和弦';
+    fol.title='把本声部现有音符一次性吸附到最近的和弦音（和弦外的音就近挪进和弦内）';
     fol.addEventListener('click',()=>{
-      const wasOn=followOn();
-      tr.follow=!wasOn; paint(); refreshSub(tr);
-      if(!wasOn){                                  // 开启跟随：当前音序立刻吸附到和弦轨
-        reharmonizeTrack(tr); save();
-        toast('「'+tr.name+'」已跟随和弦进行轨（音高已对齐）');
-      }else{
-        save();
-        toast('「'+tr.name+'」改为独立和声（调整和弦轨不再影响它）');
-      }
+      const changed=reharmonizeTrack(tr);
+      save();
+      toast(changed?('「'+tr.name+'」已对齐到和弦进行轨（音高已吸附）'):('「'+tr.name+'」的音符都已落在和弦内，无需对齐'));
     });
     const sel=document.createElement('select'); fillInstSelect(sel,tr.inst);
     sel.addEventListener('change',()=>{tr.inst=sel.value;refreshSub(tr);save();});

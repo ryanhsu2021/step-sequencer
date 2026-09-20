@@ -262,7 +262,7 @@ function polish(mel,seed,chordAt,STABLE,N){
 function optimizeMelody(tr,fresh){
   const N=stepsOf(tr), bars=barsOf(tr);
   const STABLE=STABLE_DEG();
-  const prog=progFor(tr);                            // 跟随和弦进行轨 / 自行推导
+  const prog=progFor();                              // 恒用和弦进行轨
   const chordAt=chordAtFor(prog,N);
   /* seed 只取「用户手动摆的音」（userSeq）——机器上次生成的结果不算，
      否则连点 ✨ 会被上一次的输出锁死，收敛成不动点、毫无变化。
@@ -339,7 +339,7 @@ function optimizeForTrack(tr){
   if(tr.kind!=='inst') return;
   const ok=optimizeMelody(tr);
   refreshAll(); save();
-  const src=tr.follow!==false?'和弦进行轨':'独立和声';
+  const src='和弦进行轨';
   toast(ok?(STYLE().emoji+' 按「'+STYLE().name+'」+ '+src+' 重排「'+tr.name+'」——可连点得到不同版本'):'优化失败');
 }
 /* 🎲 按当前风格从零随机生成一条全新旋律（无视现有内容；连点每次不同） */

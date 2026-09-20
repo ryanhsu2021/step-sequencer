@@ -127,7 +127,7 @@ function ensureDrum(force){
 function autoArrange(){
   let mel=state.tracks.find(t=>t.kind==='inst'&&t.seq.some(v=>v>=0))||state.tracks.find(t=>t.kind==='inst');
   if(!mel){ toast('请先添加一个旋律声部'); return; }
-  const prog=progFor(mel);                           // 跟随和弦轨 → 用它；否则贴旋律推导
+  const prog=progFor();                              // 恒用和弦进行轨
   const pk=a=>a[(Math.random()*a.length)|0];
   const roles=[
     {name:'贝斯',inst:pk(SP_.bassI||['bass']),oct:-1,fill:fillBass},
@@ -137,12 +137,12 @@ function autoArrange(){
   const made=[];
   for(const role of roles){
     const t=ensureFreeVoice(role,mel);
-    if(t){ role.fill(t,prog); t.follow=mel.follow!==false; made.push(t.name+'('+barsOf(t)+'小节)'); }
+    if(t){ role.fill(t,prog); made.push(t.name+'('+barsOf(t)+'小节)'); }
   }
   const d=ensureDrum();
   renderTracks();
   save();
-  toast('🎼 '+STYLE().emoji+' 按「'+STYLE().name+'」'+(mel.follow!==false?' + 和弦进行轨':' + 旋律推导')+'编配：'
+  toast('🎼 '+STYLE().emoji+' 按「'+STYLE().name+'」+ 和弦进行轨编配：'
     +(made.length?made.join(' + '):'（无空闲声部）')+(d?' + 鼓组':'')+' ——再点一次会不同');
 }
 

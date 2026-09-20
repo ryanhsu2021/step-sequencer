@@ -10,7 +10,7 @@ function makeTrack(kind,name,inst,oct){
     id:++tid, kind:kind||'inst', name:name||('声部 '+tid),
     inst:inst||'piano', oct:oct||0, bars:1,
     seq:[], last:[], userSeq:null,
-    vol:.85, pan:0, mute:false, solo:false, follow:true,
+    vol:.85, pan:0, mute:false, solo:false,
     color:TRACK_COLORS[0], p:{},
   };
   if(t.kind==='drum') t.p=patForBars(PRESET_BY_ID('pop').p,1);
@@ -107,7 +107,7 @@ function save(){
         chordVol:chordVol,
         tracks:state.tracks.map(t=>({kind:t.kind,name:t.name,inst:t.inst,oct:t.oct,bars:barsOf(t),seq:t.seq,
           useq:(t.kind==='inst'&&Array.isArray(t.userSeq))?t.userSeq:null,
-          vol:t.vol,pan:t.pan,mute:t.mute,solo:t.solo,follow:t.follow!==false,drum:t.drum,p:t.p}))
+          vol:t.vol,pan:t.pan,mute:t.mute,solo:t.solo,drum:t.drum,p:t.p}))
       }));
     }catch(e){}
   },320);
@@ -144,7 +144,7 @@ function loadSaved(){
       Object.assign(t,{seq:fitArr(o.seq,bars*BAR),last:new Array(bars*BAR).fill(-1),
         userSeq:Array.isArray(o.useq)?fitArr(o.useq,bars*BAR):null,
         vol:o.vol==null?.85:o.vol,
-        pan:o.pan||0,mute:!!o.mute,solo:!!o.solo,follow:o.follow!==false,drum:o.drum||'pop',
+        pan:o.pan||0,mute:!!o.mute,solo:!!o.solo,drum:o.drum||'pop',
         p:(o.kind==='drum'&&o.p)?patForBars(o.p,bars):t.p});
       return t;
     });

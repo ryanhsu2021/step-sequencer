@@ -73,11 +73,9 @@ function chordLabel(ch){
   if(ch.tones.length>3&&q!=='°'&&q!=='ø') q+='7';
   return {name:ROOT_NAMES[pc]+q,deg:ROMAN[ch.root]||'',tones:ch.tones.map(d=>ROOT_NAMES[((rootIdx+iv[d])%12+12)%12])};
 }
-/* 某声部实际使用的和声：跟随和弦进行轨 → 用它；否则自己推（有音符就贴着自己的音推） */
-function progFor(tr){
-  if(!tr||tr.follow!==false) return state.prog;
-  const has=tr.seq&&tr.seq.some(v=>v>=0);
-  return has?deriveProgression(tr.seq):randomProgression();
+/* 所有声部（除鼓）统一用和弦进行轨做和声（✨/🎼/编配）。「对齐和弦」按钮是手动一次性触发 */
+function progFor(){
+  return state.prog;
 }
 const ensureProg=()=>{ fitProg(); return state.prog; };
 /* 🎲 随机同风格：只换和弦内容，小节数保持当前值不动 */
@@ -90,14 +88,15 @@ function setProgBars(n){
   n=clamp(n|0,1,MAX_BARS);
   if(n===progBars()) return;
   state.progBars=n; chordEdit=null;
-  fitProg(); reharmonizeAll(); renderChord(); save();
-  toast('和弦进行轨 → '+n+' 小节（'+progBeats()+' 拍，与声部小节数无关，各声部音高已随新和弦对齐）');
+  fitProg(); renderChord(); save();
+  toast('和弦进行轨 → '+n+' 小节（'+progBeats()+' 拍，与声部小节数无关）');
 }
 function setProg(p,edited){
   state.prog=p; state.progEdited=!!edited; chordEdit=null;
-  fitProg(); reharmonizeAll(); renderChord(); save();
+  fitProg(); renderChord(); save();
 }
-/* 吸附单个声部：现有音符立刻对齐到当前和弦轨的和弦音（鼓除外） */
+/* 「⟳ 对齐和弦」触发：把该声部现有音符一次性吸附到最近的和弦音（鼓除外；手动素材 userSeq 同步挪，
+   ✨ 不会把旧音变回来）。没有持久跟随状态——和弦轨之后再变，需要再点一次才重新对齐 */
 function reharmonizeTrack(tr){
   if(!tr||tr.kind!=='inst') return false;
   const n=stepsOf(tr);
@@ -123,15 +122,6 @@ function reharmonizeTrack(tr){
     if(card&&card.kind==='inst') for(let s=0;s<n;s++) updateDial(tr,s);
   }
   return changed;
-}
-/* 和弦轨一变，所有【开了 ♻ 跟随和弦】的旋律/贝斯/琶音声部音符立刻吸附到最近的和弦音；
-   ◌ 独立和声的声部完全不动。跟随开关只在这里和 ✨/🎼 生成时起作用 */
-function reharmonizeAll(){
-  for(const tr of state.tracks){
-    if(tr.follow===false) continue;                 // 独立和声：调和弦轨不影响它
-    reharmonizeTrack(tr);
-  }
-  save();
 }
 /* ---- 和弦进行轨发声：播放时每拍触发当前和弦，音色 / 音量可选（默认跟风格） ---- */
 let chordInst='', chordMute=false, chordVol=.8;
