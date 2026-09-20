@@ -162,7 +162,7 @@ T.setStyle(1);
 const fsnap=snap(mel0), fanchors=Object.keys(anchors).length;
 const fchord=()=>T.chordAtFor(T.progFor(mel0),T.stepsOf(mel0));
 const fsnaps=[];
-for(let i=0;i<4;i++){
+for(let i=0;i<6;i++){
   let ok=true; try{ T.randomizeForTrack(mel0); }catch(e){ ok=false; }
   const q=mel0.seq, ca=fchord(), Nq=T.stepsOf(mel0);
   const notes=q.filter(v=>v>=0).length;
@@ -173,7 +173,7 @@ for(let i=0;i<4;i++){
   fsnaps.push(snap(mel0));
 }
 chk('🎲 后 userSeq 作废（旧锚点不再残留）',mel0.userSeq===null,'fanchors='+fanchors);
-chk('🎲 连点 4 次 ≥2 个不同版本',new Set(fsnaps).size>=2,'distinct='+new Set(fsnaps).size);
+chk('🎲 连点 6 次 ≥2 个不同版本',new Set(fsnaps).size>=2,'distinct='+new Set(fsnaps).size);
 chk('🎲 结果与生成前不同',fsnaps[fsnaps.length-1]!==fsnap||new Set(fsnaps).size>=2);
 
 console.log('== 4. 手动编辑 → 立刻成为素材（下次 ✨ 保留它）==');
