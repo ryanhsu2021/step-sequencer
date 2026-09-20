@@ -97,33 +97,39 @@ function setProg(p,edited){
   state.prog=p; state.progEdited=!!edited; chordEdit=null;
   fitProg(); reharmonizeAll(); renderChord(); save();
 }
-/* 和弦轨一变，所有旋律/贝斯/琶音声部的现有音符立刻吸附到最近的和弦音（鼓除外；无视跟随开关——
-   独立和声的声部只是 ✨/🎼 生成时自己推和声，和弦轨变了它们照样跟着挪） */
+/* 吸附单个声部：现有音符立刻对齐到当前和弦轨的和弦音（鼓除外） */
+function reharmonizeTrack(tr){
+  if(!tr||tr.kind!=='inst') return false;
+  const n=stepsOf(tr);
+  if(!tr.seq.some(v=>v>=0)) return false;
+  const ca=chordAtFor(state.prog,n);
+  let changed=false;
+  for(let s=0;s<n;s++){
+    const r=tr.seq[s]; if(r<0||!ca[s]||!ca[s].size) continue;
+    if(ca[s].has(degOfRow(r))) continue;
+    let best=r;
+    for(let d=1;d<ROWS;d++){
+      const lo=r-d, hi=r+d;
+      if(lo>=0&&ca[s].has(degOfRow(lo))){ best=lo; break; }
+      if(hi<ROWS&&ca[s].has(degOfRow(hi))){ best=hi; break; }
+    }
+    tr.seq[s]=best;
+    if(tr.last) tr.last[s]=best;
+    if(Array.isArray(tr.userSeq)&&tr.userSeq[s]>=0) tr.userSeq[s]=best;   // 手动素材也一起挪，✨ 不会把旧音变回来
+    changed=true;
+  }
+  if(changed){
+    const card=view.cards.get(tr.id);
+    if(card&&card.kind==='inst') for(let s=0;s<n;s++) updateDial(tr,s);
+  }
+  return changed;
+}
+/* 和弦轨一变，所有【开了 ♻ 跟随和弦】的旋律/贝斯/琶音声部音符立刻吸附到最近的和弦音；
+   ◌ 独立和声的声部完全不动。跟随开关只在这里和 ✨/🎼 生成时起作用 */
 function reharmonizeAll(){
   for(const tr of state.tracks){
-    if(tr.kind!=='inst') continue;
-    const n=stepsOf(tr);
-    if(!tr.seq.some(v=>v>=0)) continue;
-    const ca=chordAtFor(state.prog,n);
-    let changed=false;
-    for(let s=0;s<n;s++){
-      const r=tr.seq[s]; if(r<0||!ca[s]||!ca[s].size) continue;
-      if(ca[s].has(degOfRow(r))) continue;
-      let best=r;
-      for(let d=1;d<ROWS;d++){
-        const lo=r-d, hi=r+d;
-        if(lo>=0&&ca[s].has(degOfRow(lo))){ best=lo; break; }
-        if(hi<ROWS&&ca[s].has(degOfRow(hi))){ best=hi; break; }
-      }
-      tr.seq[s]=best;
-      if(tr.last) tr.last[s]=best;
-      if(Array.isArray(tr.userSeq)&&tr.userSeq[s]>=0) tr.userSeq[s]=best;   // 手动素材也一起挪，✨ 不会把旧音变回来
-      changed=true;
-    }
-    if(changed){
-      const card=view.cards.get(tr.id);
-      if(card&&card.kind==='inst') for(let s=0;s<n;s++) updateDial(tr,s);
-    }
+    if(tr.follow===false) continue;                 // 独立和声：调和弦轨不影响它
+    reharmonizeTrack(tr);
   }
   save();
 }

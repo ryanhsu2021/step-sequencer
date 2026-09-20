@@ -331,7 +331,8 @@ function buildCard(tr,i){
       meta.appendChild(more);
     }
   }else{
-    /* 是否跟随「和弦进行轨」：决定 ✨ 优化与 🎼 编配用的和声 */
+    /* 是否跟随「和弦进行轨」：开着 → ✨/🎼 用和弦轨和声，且调和弦轨时本声部音高跟着挪；
+       关着 → 完全独立，调和弦轨不影响它 */
     const followOn=()=>tr.follow!==false;
     const fol=document.createElement('button');
     fol.type='button';
@@ -339,12 +340,19 @@ function buildCard(tr,i){
       const o=followOn();
       fol.className='chip btn-like'+(o?' on':'');
       fol.textContent=o?'♻ 跟随和弦':'◌ 独立和声';
-      fol.title=o?'按「和弦进行轨」的和声优化 / 编配这一声部':'脱离和弦轨：优化时贴合本声部现有音符自行推导和声';
+      fol.title=o?'本声部跟随和弦进行轨：调整和弦轨时音高自动对齐；点击关闭则不再跟随':'独立和声：调整和弦轨不影响本声部；点击开启会立刻把现有音符对齐到当前和弦';
     };
     paint();
     fol.addEventListener('click',()=>{
-      tr.follow=!followOn(); paint(); save(); refreshSub(tr);
-      toast('「'+tr.name+'」'+(followOn()?'已跟随和弦进行轨':'改为独立和声'));
+      const wasOn=followOn();
+      tr.follow=!wasOn; paint(); refreshSub(tr);
+      if(!wasOn){                                  // 开启跟随：当前音序立刻吸附到和弦轨
+        reharmonizeTrack(tr); save();
+        toast('「'+tr.name+'」已跟随和弦进行轨（音高已对齐）');
+      }else{
+        save();
+        toast('「'+tr.name+'」改为独立和声（调整和弦轨不再影响它）');
+      }
     });
     const sel=document.createElement('select'); fillInstSelect(sel,tr.inst);
     sel.addEventListener('change',()=>{tr.inst=sel.value;refreshSub(tr);save();});
