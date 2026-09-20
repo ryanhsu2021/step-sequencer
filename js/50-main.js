@@ -45,6 +45,8 @@ function clearTracksKeep(){
 $('bpm').addEventListener('input',e=>{bpm=+e.target.value;$('bpmVal').textContent=bpm;save();});
 $('swing').addEventListener('input',e=>{swingPct=+e.target.value;$('swingVal').textContent=swingPct+'%';save();});
 $('vol').addEventListener('input',e=>{volume=+e.target.value;$('volVal').textContent=volume;applyVolume();save();});
+REV_PRESETS.forEach(p=>$('revSel').add(new Option(p.name,p.id)));
+$('revSel').addEventListener('change',e=>{setReverb(e.target.value);save();toast('总输出混响 → '+e.target.options[e.target.selectedIndex].text);});
 
 const addVoice=()=>{
   const t=addTrack('inst');
@@ -97,6 +99,7 @@ window.addEventListener('beforeunload',()=>{ if(!audioCtx) save(); });
   $('bpm').value=bpm;       $('bpmVal').textContent=bpm;
   $('swing').value=swingPct;$('swingVal').textContent=swingPct+'%';
   $('vol').value=volume;    $('volVal').textContent=volume;
+  $('revSel').value=revPreset;
   rootSel.value=String(rootIdx); modeSel.value=String(modeIdx);
   styleSel.value=String(styleIdx); styleSel.title=styleTip();
   renderTracks();

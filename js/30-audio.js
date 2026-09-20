@@ -6,6 +6,28 @@
 /* ============ 音频引擎：总线 / 合成音色 ============ */
 let audioCtx=null, masterGain=null;
 let bpm=112, swingPct=0, volume=80;
+/* ============ 效果器预设 ============ */
+/* 每声部延时：sync＝以「四分音符＝60/bpm 秒」为基准的倍率（随 BPM 自动同步）；ms＝固定毫秒；fb＝回声次数；wet＝效果量 */
+const DELAY_PRESETS=[
+  {id:'off',    name:'延时 关'},
+  {id:'slap',   name:'拍打回声',  ms:.09,  fb:.18, wet:.22, damp:4200},
+  {id:'8th',    name:'1/8 短延',  sync:.5, fb:.28, wet:.26, damp:3600},
+  {id:'dot8',   name:'附点 1/8',  sync:.75,fb:.38, wet:.28, damp:3200},
+  {id:'quarter',name:'1/4 长回声',sync:1,  fb:.44, wet:.28, damp:2800},
+  {id:'space',  name:'空间漂移',  sync:1.5,fb:.52, wet:.32, damp:2200},
+];
+const DELAY_IDS=new Set(DELAY_PRESETS.map(p=>p.id));
+/* 总输出混响（卷积）：decay＝衰减秒数；wet＝湿度 */
+const REV_PRESETS=[
+  {id:'off',      name:'混响 关'},
+  {id:'room',     name:'房间',  decay:.9, wet:.16},
+  {id:'plate',    name:'板式',  decay:1.9,wet:.24},
+  {id:'hall',     name:'音乐厅',decay:2.8,wet:.28},
+  {id:'cathedral',name:'教堂',  decay:4.5,wet:.32},
+];
+const REV_IDS=new Set(REV_PRESETS.map(p=>p.id));
+let revPreset='off', revConv=null, revWet=null, revDecay=-1;
+
 function ensureAudio(){
   if(audioCtx) return;
   const AC=window.AudioContext||window.webkitAudioContext;
@@ -16,24 +38,69 @@ function ensureAudio(){
   const cmp=audioCtx.createDynamicsCompressor();
   cmp.threshold.value=-13; cmp.knee.value=16; cmp.ratio.value=3.2; cmp.attack.value=.004; cmp.release.value=.18;
   masterGain.connect(lp); lp.connect(cmp); cmp.connect(audioCtx.destination);
-  applyVolume();
+  /* 总输出混响发送：masterGain → 卷积 → 湿度 → 压缩器 */
+  revConv=audioCtx.createConvolver();
+  revWet=audioCtx.createGain(); revWet.gain.value=0;
+  masterGain.connect(revConv); revConv.connect(revWet); revWet.connect(cmp);
+  applyVolume(); applyReverb();
 }
 function applyVolume(){ if(masterGain) masterGain.gain.value=Math.pow(volume/100,1.55)*.95; }
+/* 程序生成脉冲响应：双声道去相关噪声 × 指数衰减（decay 变了才重建） */
+function makeIR(decay){
+  const sr=audioCtx.sampleRate, len=Math.max(1,(sr*decay)|0);
+  const buf=audioCtx.createBuffer(2,len,sr);
+  for(let ch=0;ch<2;ch++){
+    const d=buf.getChannelData(ch);
+    for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2.8);
+  }
+  return buf;
+}
+function applyReverb(){
+  const p=REV_PRESETS.find(x=>x.id===revPreset)||REV_PRESETS[0];
+  if(!audioCtx||!revConv) return;
+  if(p.decay!==revDecay){ revConv.buffer=makeIR(p.decay); revDecay=p.decay; }
+  revWet.gain.setTargetAtTime(p.wet,audioCtx.currentTime,.05);
+}
+function setReverb(id){ revPreset=REV_IDS.has(id)?id:'off'; applyReverb(); }
 
-/* 每声部输出链：gain → panner → master（音量与声像实时同步） */
+/* 每声部输出链：gain → panner → master；并行延时发送（send → delay → 阻尼 → 反馈循环 → 湿度 → panner） */
 const busCache=new Map();
+function applyTrackFx(tr,b){
+  const p=DELAY_PRESETS.find(x=>x.id===(tr.fx||'off'))||DELAY_PRESETS[0];
+  if(!b.fx) return;
+  const t=(p.sync!=null)?(60/bpm)*p.sync:(p.ms||0);
+  b.fx.dl.delayTime.setTargetAtTime(Math.min(2.4,t),audioCtx.currentTime,.03);
+  b.fx.fb.gain.setTargetAtTime(p.fb||0,audioCtx.currentTime,.03);
+  b.fx.send.gain.setTargetAtTime(p.wet||0,audioCtx.currentTime,.03);
+  if(p.damp) b.fx.damp.frequency.setTargetAtTime(p.damp,audioCtx.currentTime,.03);
+}
+function setTrackFx(tr,id){
+  tr.fx=DELAY_IDS.has(id)?id:'off';
+  const b=busCache.get(tr.id);
+  if(b&&audioCtx) applyTrackFx(tr,b);
+}
 function busFor(tr){
   if(!audioCtx) return null;
   let b=busCache.get(tr.id);
   if(!b){
     const g=audioCtx.createGain(); g.gain.value=tr.vol;
-    if(audioCtx.createStereoPanner){
-      const p=audioCtx.createStereoPanner(); p.pan.value=tr.pan; g.connect(p); p.connect(masterGain); b={gain:g,pan:p};
-    }else{ g.connect(masterGain); b={gain:g,pan:null}; }
+    let p;
+    if(audioCtx.createStereoPanner){ p=audioCtx.createStereoPanner(); p.pan.value=tr.pan; g.connect(p); p.connect(masterGain); }
+    else{ g.connect(masterGain); }
+    const send=audioCtx.createGain(); send.gain.value=0;
+    const dl=audioCtx.createDelay(2.5); dl.delayTime.value=.25;
+    const damp=audioCtx.createBiquadFilter(); damp.type='lowpass'; damp.frequency.value=3400;
+    const fb=audioCtx.createGain(); fb.gain.value=0;
+    const wet=audioCtx.createGain(); wet.gain.value=1;
+    g.connect(send); send.connect(dl); dl.connect(damp);
+    damp.connect(fb); fb.connect(dl);                 // 反馈循环（带阻尼）
+    damp.connect(wet); wet.connect(p||masterGain);
+    b={gain:g,pan:p,fx:{send,dl,fb,damp}};
     busCache.set(tr.id,b);
   }
   b.gain.gain.value=tr.vol;
   if(b.pan) b.pan.pan.value=tr.pan;
+  applyTrackFx(tr,b);
   return b.gain;
 }
 

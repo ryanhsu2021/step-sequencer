@@ -26,6 +26,15 @@ function trackDesc(tr){
   const lo=noteName(rowMidi(ROWS-1,tr.oct)), hi=noteName(rowMidi(0,tr.oct));
   return INST_NAME(tr.inst)+' · '+barTxt+(tr.oct?' · '+(tr.oct>0?'+':'')+tr.oct+'八度':'')+' · '+lo+'–'+hi;
 }
+/* 每声部延时效果下拉（旋律与鼓声部共用） */
+function chipFx(tr){
+  const s=document.createElement('select');
+  DELAY_PRESETS.forEach(p=>s.add(new Option(p.name,p.id)));
+  s.value=tr.fx||'off';
+  s.title='本声部延时效果：回声时间与 BPM 自动同步';
+  s.addEventListener('change',()=>{setTrackFx(tr,s.value);save();toast('「'+tr.name+'」延时 → '+s.options[s.selectedIndex].text);});
+  return s;
+}
 function chipRange(label,min,max,val,fmt,oninput){
   const l=document.createElement('label'); l.className='chip';
   const t=document.createElement('span'); t.textContent=label;
@@ -329,6 +338,7 @@ function buildCard(tr,i){
       });
       meta.appendChild(more);
     }
+    meta.appendChild(chipFx(tr));
   }else{
     /* 「⟳ 对齐和弦」：一次性触发——点一下把本声部现有音符吸附到当前和弦进行轨；
        没有持久状态，和弦轨之后再变想重新对齐就再点一次。✨/🎼 恒用和弦轨做和声 */
@@ -350,7 +360,8 @@ function buildCard(tr,i){
     oct.addEventListener('change',()=>{tr.oct=+oct.value;refreshSub(tr);refreshAll();save();});
     meta.append(fol,sel,oct,
       chipRange('音量',0,100,Math.round(tr.vol*100),v=>v,x=>{tr.vol=x/100;save();}),
-      chipRange('声像',-100,100,Math.round(tr.pan*100),PAN_TXT,x=>{tr.pan=x/100;save();}));
+      chipRange('声像',-100,100,Math.round(tr.pan*100),PAN_TXT,x=>{tr.pan=x/100;save();}),
+      chipFx(tr));
   }
   el.appendChild(meta);
 

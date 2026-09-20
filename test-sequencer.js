@@ -104,7 +104,8 @@ const expose=`
 ;globalThis.__T={state,SP_:()=>SP_,setStyle,optimizeMelody,setStep,setBars,fillBass,fillArp,fillPad,autoArrange,
   exportMidi,loadSaved,resetSeq,clearSeqs,clearTracksKeep,chordInstOf,randomProgression,fitProg,splitSeg,segLen,delSeg,setSegChord,
   segOfStep,chordAtFor,progFor,degOfRow,scLen,stepsOf,barsOf,songBeats,songBars,refreshAll,save,DEMO_MEL,clearTrack,randomizeForTrack,
-  setProgBars,progBeats,makeTrack,progTiled,randomSameStyle,reharmonizeTrack};`;
+  setProgBars,progBeats,makeTrack,progTiled,randomSameStyle,reharmonizeTrack,
+  DELAY_PRESETS,REV_PRESETS,setTrackFx,setReverb,revGetter:()=>revPreset,trackFx:t=>t.fx};`;
 try{ vm.runInContext(js+expose,sandbox); }catch(e){ console.log('LOAD_FAIL:',e.stack.split('\n').slice(0,4).join('\n')); process.exit(1); }
 const T=sandbox.__T;
 let pass=0,fail=0;
@@ -367,6 +368,30 @@ chk('再次点对齐：音序立刻吸附到新和弦',trh.seq.every((r,s)=>r===
 const okNoop=T.reharmonizeTrack(trh);
 chk('音符已全在和弦内：再点对齐无改动',okNoop===false);
 T.state.tracks.pop();                             // 断言完移除，避免污染后续用例
+
+console.log('== 11. 延时 / 混响效果器：预设合法 + 持久化 ==');
+const dIds=new Set(T.DELAY_PRESETS.map(p=>p.id)), rIds=new Set(T.REV_PRESETS.map(p=>p.id));
+chk('延时预设：含「关」且 id 唯一、带名称',dIds.has('off')&&T.DELAY_PRESETS.length===dIds.size
+  &&T.DELAY_PRESETS.every(p=>typeof p.name==='string'&&p.name.length>=1));
+chk('延时预设：每个非关预设都有效果量与反馈参数',T.DELAY_PRESETS.filter(p=>p.id!=='off')
+  .every(p=>p.wet>0&&p.fb>0&&(p.sync!=null||p.ms!=null)));
+chk('混响预设：含「关」且 id 唯一、每个非关预设都有衰减与湿度',rIds.has('off')&&T.REV_PRESETS.length===rIds.size
+  &&T.REV_PRESETS.filter(p=>p.id!=='off').every(p=>p.decay>0&&p.wet>0));
+const tfx=T.makeTrack('inst','效果测试','piano',0);
+chk('新声部默认延时为「关」',tfx.fx==='off');
+T.setTrackFx(tfx,'dot8');
+chk('setTrackFx 生效（非法 id 回落「关」）',tfx.fx==='dot8');
+T.setTrackFx(tfx,'不存在');
+chk('setTrackFx 生效（非法 id 回落「关」）',tfx.fx==='off');
+T.setTrackFx(tfx,'space');
+T.state.tracks.push(tfx);
+T.setReverb('hall');
+T.save();
+const sv11=JSON.parse(store['polyseq.v7']);
+chk('存档含 reverb 与声部 fx',sv11.reverb==='hall'&&sv11.tracks.some(t=>t.fx==='space'));
+T.loadSaved();
+chk('读回：reverb 与 fx 还原',T.revGetter()==='hall'&&T.state.tracks.find(t=>t.fx==='space')!==undefined);
+T.setReverb('off'); T.setTrackFx(tfx,'off');
 
 console.log('\n=== '+(fail?fail+' 项失败':'全部通过')+'（'+pass+' 通过 / '+fail+' 失败）===');
 process.exit(fail?1:0);
