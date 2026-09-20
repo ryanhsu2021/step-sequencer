@@ -1,9 +1,9 @@
 /* 无头测试：✨ 连点变化（userSeq 锚点来源 + 弱拍衰减 + 质量带加权抽取）+ 🎲 随机生成 + 回归 */
-const fs=require('fs'), vm=require('vm');
+const fs=require('fs'), vm=require('vm'), path=require('path');
 /* 工程已拆分为多模块：按主页 <script> 的加载顺序拼接 */
 const ORDER=['01-core','02-modes','03-styles','04-drums','10-state','20-ui','21-interact',
              '30-audio','31-transport','32-midi','40-optimizer','41-chords','42-arrange','50-main'];
-const js=ORDER.map(n=>fs.readFileSync('F:/harness/js/'+n+'.js','utf8')).join('\n');
+const js=ORDER.map(n=>fs.readFileSync(path.join(__dirname,'js',n+'.js'),'utf8')).join('\n');
 if(!js) { console.log('NO_JS'); process.exit(1); }
 
 /* ---------- DOM 桩 ---------- */
