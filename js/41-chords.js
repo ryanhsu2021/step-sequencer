@@ -84,6 +84,19 @@ function setProg(p,edited){
   state.prog=p; state.progEdited=!!edited; chordEdit=null;
   fitProg(); renderChord(); save();
 }
+/* ---- 和弦进行轨发声：播放时每拍触发当前和弦，音色可选（默认跟风格） ---- */
+let chordInst='', chordMute=false;
+const chordInstOf=()=>chordInst||(SP_.chordI&&SP_.chordI[0])||'epiano';
+function playChordSeg(ch,time){
+  try{
+    if(!audioCtx||chordMute) return;
+    const inst=chordInstOf(), t0=time+.012;
+    ch.tones.forEach((d,i)=>{
+      const r=rowForDegreeNear(d,4+i);
+      (VOICE[inst]||VOICE.epiano)(440*Math.pow(2,(rowMidi(r,0)-69)/12),t0+i*.02,masterGain,.16,stepDur()*3.6);
+    });
+  }catch(e){}
+}
 /* 试听一个和弦（用风格的色彩音色弹三/四音） */
 function audChord(ch){
   try{

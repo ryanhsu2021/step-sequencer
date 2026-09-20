@@ -5,6 +5,8 @@
    ============================================================ */
 /* ============ 基础常量：每小节 16 步 / 每声部 1–4 小节 / 8 个音阶行 + 「关」 ============ */
 const BAR=16, MAX_BARS=8, ROWS=8, MAX_TRACKS=6;
+/* 步进网格视觉分组：每 4 步一组（第 5/9/13 步前留间隔），一眼看清拍点 */
+const STEP_GAP=k=>k>0&&k%4===0;
 const $=id=>document.getElementById(id);
 const clamp=(v,a,b)=>v<a?a:v>b?b:v;
 const pick=a=>a[(Math.random()*a.length)|0];

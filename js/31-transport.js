@@ -18,6 +18,10 @@ function scheduleStep(g,time){
     if(tr.kind==='inst'){ const r=tr.seq[s]; if(r!==undefined&&r!==-1) playTrackNote(tr,r,t); }
     else { for(const id of drumHits(tr,s)) playDrumHit(tr,id,t); }
   }
+  if(g%4===0){                                    // 和弦进行轨：每拍触发一次当前和弦
+    const seg=state.prog[segOfStep(g)];
+    if(seg) playChordSeg(seg,t);
+  }
   scheduled.push({step:g,time:t});
 }
 function schedulerTick(){

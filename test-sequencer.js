@@ -102,7 +102,7 @@ sandbox.window.document=document; sandbox.globalThis=sandbox;
 vm.createContext(sandbox);
 const expose=`
 ;globalThis.__T={state,SP_:()=>SP_,setStyle,optimizeMelody,setStep,setBars,fillBass,fillArp,fillPad,autoArrange,
-  exportMidi,loadSaved,resetSeq,clearAll,randomProgression,fitProg,splitSeg,segLen,delSeg,setSegChord,
+  exportMidi,loadSaved,resetSeq,clearSeqs,clearTracksKeep,chordInstOf,randomProgression,fitProg,splitSeg,segLen,delSeg,setSegChord,
   segOfStep,chordAtFor,progFor,degOfRow,scLen,stepsOf,barsOf,songBeats,songBars,refreshAll,save,DEMO_MEL,clearTrack,randomizeForTrack};`;
 try{ vm.runInContext(js+expose,sandbox); }catch(e){ console.log('LOAD_FAIL:',e.stack.split('\n').slice(0,4).join('\n')); process.exit(1); }
 const T=sandbox.__T;
@@ -242,6 +242,33 @@ for(let st=0;st<9;st++){
   }catch(e){ robust=false; why='style '+st+' 抛异常: '+e.message; break; }
 }
 chk('9 风格 × 3 连点全部通过',robust,why);
+
+console.log('== 7. 清空音序 / 清空声部 + 和弦轨发声状态 ==');
+/* 7a 和弦轨发声：全局状态持久化 + 调度触发点有和弦可选 */
+T.save();
+chk('存档含 chordInst / chordMute',JSON.parse(store[Object.keys(store)[0]]).hasOwnProperty('chordInst')
+  &&JSON.parse(store[Object.keys(store)[0]]).hasOwnProperty('chordMute'));
+chk('chordInstOf 有默认音色',typeof T.chordInstOf==='function'&&!!T.chordInstOf());
+/* 7b 清空音序：音符清零、声部与设置保留 */
+const preTracks=T.state.tracks.map(t=>({kind:t.kind,name:t.name,inst:t.inst,bars:t.bars,len:t.seq?t.seq.length:0}));
+const preProg=JSON.stringify(T.state.prog.map(c=>[c.root,c.beats,c.seventh]));
+T.clearSeqs();
+chk('清空音序：声部数量不变',T.state.tracks.length===preTracks.length);
+chk('清空音序：旋律声部全空',T.state.tracks.filter(t=>t.kind==='inst').every(t=>t.seq.every(v=>v===-1)&&t.userSeq===null));
+chk('清空音序：鼓点清空',T.state.tracks.filter(t=>t.kind==='drum').every(t=>!Object.values(t.p).some(s=>s.indexOf('x')>=0)));
+chk('清空音序：名称/音色/小节数保留',T.state.tracks.every((t,i)=>t.kind===preTracks[i].kind&&t.name===preTracks[i].name
+  &&t.inst===preTracks[i].inst&&t.bars===preTracks[i].bars));
+chk('清空音序：和弦进行轨不动',JSON.stringify(T.state.prog.map(c=>[c.root,c.beats,c.seventh]))===preProg);
+/* 7c 清空声部：只留一个空声部，和弦进行轨原样保留 */
+const barsBefore=T.songBars();
+T.clearTracksKeep();
+chk('清空声部：只剩 1 个空声部',T.state.tracks.length===1&&T.state.tracks[0].seq.every(v=>v===-1));
+chk('清空声部：空声部保持原曲长度（'+barsBefore+' 小节）',T.barsOf(T.state.tracks[0])===barsBefore);
+chk('清空声部：和弦进行轨逐段原样',JSON.stringify(T.state.prog.map(c=>[c.root,c.beats,c.seventh]))===preProg);
+/* 7d 清空声部后重摆一个音 + 优化不崩 */
+T.setStep(T.state.tracks[0],0,5,false);
+const okOpt=T.optimizeMelody(T.state.tracks[0]);
+chk('清空声部后优化不崩且有音',okOpt===true&&T.state.tracks[0].seq.some(v=>v>=0));
 
 console.log('\n=== '+(fail?fail+' 项失败':'全部通过')+'（'+pass+' 通过 / '+fail+' 失败）===');
 process.exit(fail?1:0);

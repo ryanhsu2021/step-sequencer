@@ -83,6 +83,14 @@ input[type=range]:hover::-webkit-slider-thumb{transform:scale(1.15)}
 }
 .cc-btn:hover{background:rgba(255,255,255,.22);transform:translateY(-1px)}
 .cc-btn:active{transform:scale(.96)}
+.cc-btn.off{opacity:.55;text-decoration:line-through}
+/* 和弦轨音色选择：墨色卡上的白底胶囊 */
+.cc-inst{
+  flex:none;font:inherit;font-size:12px;font-weight:600;color:#141414;
+  background:rgba(255,255,255,.92);border:1.5px solid rgba(255,255,255,.28);
+  border-radius:999px;padding:6px 10px;outline:none;cursor:pointer;transition:.14s;max-width:150px;
+}
+.cc-inst:hover{background:#fff;border-color:#fff}
 .cc-bars{display:flex;flex-wrap:wrap;gap:8px;align-items:stretch}
 .cseg{
   flex:1 1 104px;min-width:104px;text-align:left;cursor:pointer;position:relative;

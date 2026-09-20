@@ -21,12 +21,25 @@ function seedDefault(){
   drum.p=sd.p; drum.drum=sd.id;
   renderTracks(); save();
 }
-function clearAll(){
+/* 清空音序：所有声部的音符/鼓点清零，声部本身、音色与小节数保留 */
+function clearSeqs(){
   state.tracks.forEach(t=>{
     if(t.kind==='drum'){ t.p={}; t.drum='custom'; }
     else resetSeq(t);
   });
-  refreshAll(); save(); toast('已清空所有声部（小节数与和弦进行轨保留）');
+  renderTracks(); save();
+  toast('已清空所有声部的音序（音色、小节数与和弦进行轨保留）');
+}
+/* 清空声部：删除全部声部，只保留和弦进行轨（自动留一个空声部，并保持原曲长度让和弦轨原样不动） */
+function clearTracksKeep(){
+  const bars=songBars();
+  busCache.clear();
+  state.tracks=[];
+  const t=makeTrack('inst');
+  t.bars=bars; resetSeq(t); t.name='主旋律';
+  state.tracks=[t];
+  recolor(); save(); renderTracks();
+  toast('已删除所有声部，只保留和弦进行轨（留了一个 '+bars+' 小节的空声部）');
 }
 /* ============ 控件接线 ============ */
 $('bpm').addEventListener('input',e=>{bpm=+e.target.value;$('bpmVal').textContent=bpm;save();});
@@ -67,7 +80,8 @@ styleSel.addEventListener('change',()=>{
 });
 
 $('arrangeBtn').addEventListener('click',e=>{autoArrange();e.target.blur();});
-$('clearBtn').addEventListener('click',e=>{clearAll();e.target.blur();});
+$('clearSeqBtn').addEventListener('click',e=>{clearSeqs();e.target.blur();});
+$('clearTracksBtn').addEventListener('click',e=>{clearTracksKeep();e.target.blur();});
 
 window.addEventListener('keydown',e=>{
   if(e.code!=='Space'||e.repeat) return;

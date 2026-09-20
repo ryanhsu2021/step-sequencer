@@ -87,12 +87,20 @@ function renderChord(){
     '<div class="cc-btns">'+
       '<button class="cc-btn" data-act="rand" title="按当前风格再随机取一条进行">🎲 随机同风格</button>'+
       '<button class="cc-btn" data-act="from" title="按现有旋律反推一条和声">⤵ 从旋律推导</button>'+
-    '</div>';
+      '<button class="cc-btn'+(chordMute?' off':'')+'" data-act="cmute" title="播放时和弦进行轨是否发声（每拍触发一次当前和弦）">'+
+        (chordMute?'🔇 和弦声 关':'🔊 和弦声 开')+'</button>'+
+    '</div>'+
+    '<select class="cc-inst" title="和弦进行轨播放时的音色"></select>';
   head.querySelectorAll('button[data-act]').forEach(b=>b.addEventListener('click',()=>{
     const a=b.dataset.act;
     if(a==='rand'){
       setProg(randomProgression(),false); audChord(state.prog[0]);
       toast('🎲 已按「'+STYLE().name+'」换了一条和弦进行');
+    }
+    else if(a==='cmute'){
+      chordMute=!chordMute; save();
+      toast(chordMute?'和弦进行轨已静音（不再随播放发声）':'和弦进行轨开始发声 · 音色 '+INST_NAME(chordInstOf()));
+      renderChord();
     }
     else{
       const mel=state.tracks.find(t=>t.kind==='inst'&&t.seq.some(v=>v>=0));
@@ -101,6 +109,15 @@ function renderChord(){
       toast('⤵ 已按「'+mel.name+'」的旋律推导和声');
     }
   }));
+  const ciSel=head.querySelector('select.cc-inst');
+  if(ciSel){
+    fillInstSelect(ciSel,chordInstOf());
+    ciSel.title='和弦进行轨播放时的音色（每拍触发一次当前和弦）';
+    ciSel.addEventListener('change',()=>{
+      chordInst=ciSel.value; save();
+      toast('和弦进行轨音色 → '+INST_NAME(chordInst));
+    });
+  }
   box.appendChild(head);
 
   const bars=document.createElement('div'); bars.className='cc-bars';
@@ -361,7 +378,7 @@ function buildStepRow(tr,card){
     const nums=document.createElement('div'); nums.className='stepnums';
     const row=document.createElement('div'); row.className='steprow';
     for(let k=0;k<BAR;k++){
-      const s=b*BAR+k, gap=(k%8===4);
+      const s=b*BAR+k, gap=STEP_GAP(k);
       const n=document.createElement('div');
       n.className='stepnum'+(gap?' gap':''); n.textContent=k+1;
       nums.appendChild(n); card.nums[s]=n;
@@ -416,7 +433,7 @@ function buildDrumGrid(tr,card){
       for(let k=0;k<BAR;k++){
         const s=b*BAR+k;
         const cell=document.createElement('div');
-        cell.className='dcell'+(k%8===4?' gap':'');
+        cell.className='dcell'+(STEP_GAP(k)?' gap':'');
         cell.title='第 '+(b+1)+' 小节第 '+(k+1)+' 步';
         cell.addEventListener('click',()=>{
           const val=getLane(tr,lane.id)[s]!=='x';

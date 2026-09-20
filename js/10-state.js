@@ -100,6 +100,7 @@ function save(){
     try{
       localStorage.setItem(LS_KEY,JSON.stringify({
         rootIdx,modeIdx,styleIdx,bpm,swingPct,volume,
+        chordInst:chordInst||null,chordMute:!!chordMute,
         prog:(state.prog||[]).map(c=>({r:c.root,s:c.seventh?1:0,b:clamp(c.beats|0,1,64)})),
         progEdited:!!state.progEdited,
         tracks:state.tracks.map(t=>({kind:t.kind,name:t.name,inst:t.inst,oct:t.oct,bars:barsOf(t),seq:t.seq,
@@ -126,6 +127,8 @@ function loadSaved(){
     const d=JSON.parse(raw); if(!d||!Array.isArray(d.tracks)||!d.tracks.length) return false;
     rootIdx=d.rootIdx|0; modeIdx=d.modeIdx|0; setStyle(d.styleIdx|0,true);
     bpm=d.bpm||112; swingPct=d.swingPct||0; volume=d.volume==null?80:d.volume;
+    chordInst=(typeof d.chordInst==='string'&&INSTRUMENTS.some(x=>x.id===d.chordInst))?d.chordInst:'';
+    chordMute=!!d.chordMute;
     state.progEdited=!!d.progEdited;
     state.prog=migrateProg(d.prog);
     state.tracks=d.tracks.slice(0,MAX_TRACKS).map(o=>{
