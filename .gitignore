@@ -1,0 +1,10 @@
+# Local-only, never publish
+backup/
+.workbuddy/
+__pycache__/
+*.pyc
+*.log
+_*.py
+deploy-result.json
+.DS_Store
+Thumbs.db

@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>多声部音序器 · Sequencer</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app">
+  <header class="bar">
+    <div class="transport">
+      <button id="playBtn" class="btn primary">▶ 播放</button>
+      <label class="tctl style">风格<select id="styleSel" title="整体音乐风格：和弦进行、优化旋律与一键编配都按它生成"></select></label>
+      <span class="sep"></span>
+      <label class="tctl">BPM<input type="range" id="bpm" min="60" max="200" value="112"><b id="bpmVal">112</b></label>
+      <label class="tctl">摇摆<input type="range" id="swing" min="0" max="100" value="0"><b id="swingVal">0%</b></label>
+      <label class="tctl">音量<input type="range" id="vol" min="0" max="100" value="80"><b id="volVal">80</b></label>
+      <span class="sep"></span>
+      <select id="rootSel" title="主音"></select>
+      <select id="modeSel" title="调式"></select>
+      <span class="sep"></span>
+      <select id="midiOutSel" title="实时 MIDI 输出设备"></select>
+      <button id="exportBtn" class="btn" title="导出多轨标准 MIDI 文件">⬇ .mid</button>
+      <span class="spacer"></span>
+      <button id="arrangeBtn" class="btn accent" title="按和弦进行轨补齐贝斯 / 和弦音型 / 铺底 / 鼓组">🎼 一键编配</button>
+      <button id="clearBtn" class="btn ghost">清空</button>
+    </div>
+  </header>
+
+  <section class="ccard" id="chordCard"></section>
+
+  <main class="stack" id="trackStack"></main>
+
+  <div class="addrow">
+    <button class="addchip" id="addVoiceBtn">＋ 添加旋律声部</button>
+    <button class="addchip" id="addDrumBtn">🥁 添加鼓声部</button>
+  </div>
+
+  <footer>
+    <div class="cols">
+      <div><b>🎹 和弦进行轨</b>（顶部墨色卡）：全曲和声的唯一来源，每个方块是一个和弦段，<b>方块宽度＝它持续的拍数</b>。<b>点方块</b>挑级数（并试听）、<b>‹ ›</b> 改拍长、<b>⧉</b> 从中间拆开插入一个新和弦、<b>✕</b> 删除；<b>🎲 随机同风格</b> / <b>⤵ 从旋律推导</b> 一键换整条。改动过之后，切风格不会再覆盖它。</div>
+      <div><b>小节数</b>：每张卡片参数行最前面是 <b>小节 1 / 2 / 3 / 4 / 8</b>——每个声部各自独立，可以不一样长；播放时各声部按自己的长度循环。加长会把第 1 小节的内容平铺到后面（改起来更快），缩短则保留前面。和弦进行轨按全曲<b>最长</b>的声部自动循环铺满（1 小节的 2 个和弦 → 2 小节自动变成 4 个），手改过的段不会被拆。</div>
+      <div><b>♻ 跟随和弦 / ◌ 独立和声</b>：每个旋律声部卡片上的开关，决定它是否照和弦进行轨生成——跟随的声部，✨ 优化与 🎼 编配都使用这条和声；独立则贴合本声部现有音符自行推导。</div>
+      <div><b>音乐风格</b>：工具行最左侧黑色胶囊。切换风格会同步 BPM / 摇摆、按风格重写鼓声部与和弦进行，✨ 与 🎼 也照它生成（氛围稀疏长音、电子密而跳、爵士七和弦与摇摆…）。</div>
+      <div><b>旋钮步进</b>：点击＝顺时针一档（低→高，再回到「关」）；拖拽＝连续旋转；<kbd>Shift</kbd>+点击 / 右键＝逆时针；中键＝开 / 关；<kbd>空格</kbd> 播放 / 停止。<b>排序</b>：卡片右上角 ↑ ↓ 换位。<b>鼓</b>：网格按小节分组直接点击，★ 是风格推荐预设，🎲 按风格生成律动。</div>
+      <div><b>✨ 每声部独立优化</b>：以你<b>手动摆的音</b>为基准（强拍锚点始终保留；✨ / 🎼 生成的音不算锚点），在风格与和声约束下用动态规划求整句最优线，密度按小节数同比放大。<b>连点每次都不同</b>：弱拍倾向每轮随机衰减，并在多个达标方案里加权抽取；想固定一处就亲手拧一下那格。<b>🎲 随机生成</b>（旋律卡上）：无视现有内容、按当前风格从零造一条全新旋律（连点每次不同，旧的手动锚点会被作废），适合推倒重来。<b>🎼 一键编配</b>：按和弦进行轨补齐贝斯 / 和弦音型 / 铺底 / 鼓组（长度自动铺满全曲），每次点击结果都不同。</div>
+    </div>
+  </footer>
+</div>
+<div id="toast"></div>
+
+<script src="js/01-core.js"></script>
+<script src="js/02-modes.js"></script>
+<script src="js/03-styles.js"></script>
+<script src="js/04-drums.js"></script>
+<script src="js/10-state.js"></script>
+<script src="js/20-ui.js"></script>
+<script src="js/21-interact.js"></script>
+<script src="js/30-audio.js"></script>
+<script src="js/31-transport.js"></script>
+<script src="js/32-midi.js"></script>
+<script src="js/40-optimizer.js"></script>
+<script src="js/41-chords.js"></script>
+<script src="js/42-arrange.js"></script>
+<script src="js/50-main.js"></script>
+</body>
+</html>
