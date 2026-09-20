@@ -10,7 +10,7 @@ function makeTrack(kind,name,inst,oct){
     id:++tid, kind:kind||'inst', name:name||('声部 '+tid),
     inst:inst||'piano', oct:oct||0, bars:1,
     seq:[], last:[], userSeq:null,
-    vol:.85, pan:0, mute:false, solo:false, fx:'off',
+    vol:.85, pan:0, mute:false, solo:false, fx:'off', fxMix:1,
     color:TRACK_COLORS[0], p:{},
   };
   if(t.kind==='drum') t.p=patForBars(PRESET_BY_ID('pop').p,1);
@@ -99,7 +99,7 @@ function save(){
   saveTimer=setTimeout(()=>{
     try{
       localStorage.setItem(LS_KEY,JSON.stringify({
-        rootIdx,modeIdx,styleIdx,bpm,swingPct,volume,reverb:revPreset,
+        rootIdx,modeIdx,styleIdx,bpm,swingPct,volume,reverb:revPreset,revMix:revMix==null?1:revMix,
         chordInst:chordInst||null,chordMute:!!chordMute,
         prog:(state.prog||[]).map(c=>({r:c.root,s:c.seventh?1:0,b:clamp(c.beats|0,1,64)})),
         progBars:progBars(),
@@ -107,7 +107,7 @@ function save(){
         chordVol:chordVol,
         tracks:state.tracks.map(t=>({kind:t.kind,name:t.name,inst:t.inst,oct:t.oct,bars:barsOf(t),seq:t.seq,
           useq:(t.kind==='inst'&&Array.isArray(t.userSeq))?t.userSeq:null,
-          vol:t.vol,pan:t.pan,mute:t.mute,solo:t.solo,fx:t.fx||'off',drum:t.drum,p:t.p}))
+          vol:t.vol,pan:t.pan,mute:t.mute,solo:t.solo,fx:t.fx||'off',fxMix:t.fxMix==null?1:t.fxMix,drum:t.drum,p:t.p}))
       }));
     }catch(e){}
   },320);
@@ -130,6 +130,7 @@ function loadSaved(){
     rootIdx=d.rootIdx|0; modeIdx=d.modeIdx|0; setStyle(d.styleIdx|0,true);
     bpm=d.bpm||112; swingPct=d.swingPct||0; volume=d.volume==null?80:d.volume;
     revPreset=REV_IDS.has(d.reverb)?d.reverb:'off';
+    revMix=(typeof d.revMix==='number'&&d.revMix>=0&&d.revMix<=1)?d.revMix:1;
     chordInst=(typeof d.chordInst==='string'&&INSTRUMENTS.some(x=>x.id===d.chordInst))?d.chordInst:'';
     chordMute=!!d.chordMute;
     state.progEdited=!!d.progEdited;
@@ -145,7 +146,8 @@ function loadSaved(){
       Object.assign(t,{seq:fitArr(o.seq,bars*BAR),last:new Array(bars*BAR).fill(-1),
         userSeq:Array.isArray(o.useq)?fitArr(o.useq,bars*BAR):null,
         vol:o.vol==null?.85:o.vol,
-        pan:o.pan||0,mute:!!o.mute,solo:!!o.solo,fx:DELAY_IDS.has(o.fx)?o.fx:'off',drum:o.drum||'pop',
+        pan:o.pan||0,mute:!!o.mute,solo:!!o.solo,fx:DELAY_IDS.has(o.fx)?o.fx:'off',
+        fxMix:(typeof o.fxMix==='number'&&o.fxMix>=0&&o.fxMix<=1)?o.fxMix:1,drum:o.drum||'pop',
         p:(o.kind==='drum'&&o.p)?patForBars(o.p,bars):t.p});
       return t;
     });

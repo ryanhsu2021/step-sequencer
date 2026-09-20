@@ -44,7 +44,6 @@ function chipRange(label,min,max,val,fmt,oninput){
   l.append(t,r,v);
   return l;
 }
-const PAN_TXT=v=>v===0?'中':(v<0?'L'+Math.abs(v):'R'+v);
 /* 小节数：胶囊里的分段小控件（1 / 2 / 3 / 4 小节） */
 function chipSeg(label,opts,cur,onpick){
   const l=document.createElement('span'); l.className='chip seg';
@@ -339,6 +338,7 @@ function buildCard(tr,i){
       meta.appendChild(more);
     }
     meta.appendChild(chipFx(tr));
+    meta.appendChild(chipRange('强度',0,100,Math.round((tr.fxMix==null?1:tr.fxMix)*100),v=>v,x=>{tr.fxMix=x/100;save();}));
   }else{
     /* 「⟳ 对齐和弦」：一次性触发——点一下把本声部现有音符吸附到当前和弦进行轨；
        没有持久状态，和弦轨之后再变想重新对齐就再点一次。✨/🎼 恒用和弦轨做和声 */
@@ -360,8 +360,8 @@ function buildCard(tr,i){
     oct.addEventListener('change',()=>{tr.oct=+oct.value;refreshSub(tr);refreshAll();save();});
     meta.append(fol,sel,oct,
       chipRange('音量',0,100,Math.round(tr.vol*100),v=>v,x=>{tr.vol=x/100;save();}),
-      chipRange('声像',-100,100,Math.round(tr.pan*100),PAN_TXT,x=>{tr.pan=x/100;save();}),
-      chipFx(tr));
+      chipFx(tr),
+      chipRange('强度',0,100,Math.round((tr.fxMix==null?1:tr.fxMix)*100),v=>v,x=>{tr.fxMix=x/100;save();}));
   }
   el.appendChild(meta);
 

@@ -47,6 +47,7 @@ $('swing').addEventListener('input',e=>{swingPct=+e.target.value;$('swingVal').t
 $('vol').addEventListener('input',e=>{volume=+e.target.value;$('volVal').textContent=volume;applyVolume();save();});
 REV_PRESETS.forEach(p=>$('revSel').add(new Option(p.name,p.id)));
 $('revSel').addEventListener('change',e=>{setReverb(e.target.value);save();toast('总输出混响 → '+e.target.options[e.target.selectedIndex].text);});
+$('revMix').addEventListener('input',e=>{revMix=+e.target.value/100;$('revMixVal').textContent=e.target.value+'%';applyReverb();save();});
 
 const addVoice=()=>{
   const t=addTrack('inst');
@@ -100,6 +101,7 @@ window.addEventListener('beforeunload',()=>{ if(!audioCtx) save(); });
   $('swing').value=swingPct;$('swingVal').textContent=swingPct+'%';
   $('vol').value=volume;    $('volVal').textContent=volume;
   $('revSel').value=revPreset;
+  $('revMix').value=Math.round((revMix==null?1:revMix)*100); $('revMixVal').textContent=$('revMix').value+'%';
   rootSel.value=String(rootIdx); modeSel.value=String(modeIdx);
   styleSel.value=String(styleIdx); styleSel.title=styleTip();
   renderTracks();

@@ -105,7 +105,7 @@ const expose=`
   exportMidi,loadSaved,resetSeq,clearSeqs,clearTracksKeep,chordInstOf,randomProgression,fitProg,splitSeg,segLen,delSeg,setSegChord,
   segOfStep,chordAtFor,progFor,degOfRow,scLen,stepsOf,barsOf,songBeats,songBars,refreshAll,save,DEMO_MEL,clearTrack,randomizeForTrack,
   setProgBars,progBeats,makeTrack,progTiled,randomSameStyle,reharmonizeTrack,
-  DELAY_PRESETS,REV_PRESETS,setTrackFx,setReverb,revGetter:()=>revPreset,trackFx:t=>t.fx};`;
+  DELAY_PRESETS,REV_PRESETS,setTrackFx,setReverb,revGetter:()=>revPreset,trackFx:t=>t.fx,setRevMix:v=>{revMix=v;},getRevMix:()=>revMix};`;
 try{ vm.runInContext(js+expose,sandbox); }catch(e){ console.log('LOAD_FAIL:',e.stack.split('\n').slice(0,4).join('\n')); process.exit(1); }
 const T=sandbox.__T;
 let pass=0,fail=0;
@@ -377,21 +377,27 @@ chk('延时预设：每个非关预设都有效果量与反馈参数',T.DELAY_PR
   .every(p=>p.wet>0&&p.fb>0&&(p.sync!=null||p.ms!=null)));
 chk('混响预设：含「关」且 id 唯一、每个非关预设都有衰减与湿度',rIds.has('off')&&T.REV_PRESETS.length===rIds.size
   &&T.REV_PRESETS.filter(p=>p.id!=='off').every(p=>p.decay>0&&p.wet>0));
+chk('混响预设：含大空间预设 music厅 + 氛围空间，且氛围最大',rIds.has('hall')&&rIds.has('ambient')
+  &&T.REV_PRESETS.find(p=>p.id==='ambient').decay>=6);
 const tfx=T.makeTrack('inst','效果测试','piano',0);
-chk('新声部默认延时为「关」',tfx.fx==='off');
+chk('新声部默认延时为「关」且强度 100%',tfx.fx==='off'&&(tfx.fxMix==null||tfx.fxMix===1));
 T.setTrackFx(tfx,'dot8');
 chk('setTrackFx 生效（非法 id 回落「关」）',tfx.fx==='dot8');
 T.setTrackFx(tfx,'不存在');
 chk('setTrackFx 生效（非法 id 回落「关」）',tfx.fx==='off');
 T.setTrackFx(tfx,'space');
+tfx.fxMix=.4;
 T.state.tracks.push(tfx);
-T.setReverb('hall');
+T.setReverb('ambient');
+T.setRevMix(.6);
 T.save();
 const sv11=JSON.parse(store['polyseq.v7']);
-chk('存档含 reverb 与声部 fx',sv11.reverb==='hall'&&sv11.tracks.some(t=>t.fx==='space'));
+chk('存档含 reverb / revMix 与声部 fx / fxMix',sv11.reverb==='ambient'&&sv11.revMix===.6
+  &&sv11.tracks.some(t=>t.fx==='space'&&t.fxMix===.4));
 T.loadSaved();
-chk('读回：reverb 与 fx 还原',T.revGetter()==='hall'&&T.state.tracks.find(t=>t.fx==='space')!==undefined);
-T.setReverb('off'); T.setTrackFx(tfx,'off');
+chk('读回：reverb / revMix / fx / fxMix 还原',T.revGetter()==='ambient'&&T.getRevMix()===.6
+  &&T.state.tracks.find(t=>t.fx==='space'&&t.fxMix===.4)!==undefined);
+T.setReverb('off'); T.setTrackFx(tfx,'off'); T.setRevMix(1);
 
 console.log('\n=== '+(fail?fail+' 项失败':'全部通过')+'（'+pass+' 通过 / '+fail+' 失败）===');
 process.exit(fail?1:0);

@@ -17,16 +17,17 @@ const DELAY_PRESETS=[
   {id:'space',  name:'空间漂移',  sync:1.5,fb:.52, wet:.32, damp:2200},
 ];
 const DELAY_IDS=new Set(DELAY_PRESETS.map(p=>p.id));
-/* 总输出混响（卷积）：decay＝衰减秒数；wet＝湿度 */
+/* 总输出混响（卷积）：decay＝衰减秒数；wet＝基准湿度（实际湿度 × revMix 强度） */
 const REV_PRESETS=[
   {id:'off',      name:'混响 关'},
-  {id:'room',     name:'房间',  decay:.9, wet:.16},
-  {id:'plate',    name:'板式',  decay:1.9,wet:.24},
-  {id:'hall',     name:'音乐厅',decay:2.8,wet:.28},
-  {id:'cathedral',name:'教堂',  decay:4.5,wet:.32},
+  {id:'room',     name:'房间',     decay:.9, wet:.16},
+  {id:'plate',    name:'板式',     decay:1.9,wet:.24},
+  {id:'hall',     name:'音乐厅',   decay:3.2,wet:.30},
+  {id:'cathedral',name:'教堂',     decay:4.6,wet:.34},
+  {id:'ambient',  name:'氛围空间', decay:6.5,wet:.38},
 ];
 const REV_IDS=new Set(REV_PRESETS.map(p=>p.id));
-let revPreset='off', revConv=null, revWet=null, revDecay=-1;
+let revPreset='off', revMix=1, revConv=null, revWet=null, revDecay=-1;
 
 function ensureAudio(){
   if(audioCtx) return;
@@ -59,7 +60,7 @@ function applyReverb(){
   const p=REV_PRESETS.find(x=>x.id===revPreset)||REV_PRESETS[0];
   if(!audioCtx||!revConv) return;
   if(p.decay!==revDecay){ revConv.buffer=makeIR(p.decay); revDecay=p.decay; }
-  revWet.gain.setTargetAtTime(p.wet,audioCtx.currentTime,.05);
+  revWet.gain.setTargetAtTime(Math.min(1,p.wet*(revMix==null?1:revMix)),audioCtx.currentTime,.05);
 }
 function setReverb(id){ revPreset=REV_IDS.has(id)?id:'off'; applyReverb(); }
 
@@ -71,7 +72,7 @@ function applyTrackFx(tr,b){
   const t=(p.sync!=null)?(60/bpm)*p.sync:(p.ms||0);
   b.fx.dl.delayTime.setTargetAtTime(Math.min(2.4,t),audioCtx.currentTime,.03);
   b.fx.fb.gain.setTargetAtTime(p.fb||0,audioCtx.currentTime,.03);
-  b.fx.send.gain.setTargetAtTime(p.wet||0,audioCtx.currentTime,.03);
+  b.fx.send.gain.setTargetAtTime((p.wet||0)*(tr.fxMix==null?1:tr.fxMix),audioCtx.currentTime,.03);
   if(p.damp) b.fx.damp.frequency.setTargetAtTime(p.damp,audioCtx.currentTime,.03);
 }
 function setTrackFx(tr,id){

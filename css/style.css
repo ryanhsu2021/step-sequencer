@@ -11,6 +11,7 @@ body{
   min-height:100vh;color:var(--text);background:var(--bg);
   font-family:Inter,-apple-system,"Segoe UI","Microsoft YaHei",system-ui,sans-serif;
   -webkit-font-smoothing:antialiased;
+  overflow-x:hidden;overflow-x:clip;               /* 兜底：任何残余横向溢出不产生页面级滚动条 */
 }
 .app{max-width:1120px;margin:0 auto;padding:26px 20px 60px}
 
@@ -75,7 +76,7 @@ input[type=range]:hover::-webkit-slider-thumb{transform:scale(1.15)}
 .cc-head{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
 .cc-icon{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.14);font-size:15px;flex:none}
 .cc-title{font-size:16px;font-weight:750;letter-spacing:-.2px}
-.cc-sub{font-size:11.5px;font-family:var(--mono);color:rgba(255,255,255,.5);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cc-sub{font-size:11.5px;font-family:var(--mono);color:rgba(255,255,255,.5);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:0 1 auto}
 .cc-btns{display:flex;gap:7px;margin-left:auto;flex:none}
 .cc-btn{
   font:inherit;font-size:12px;font-weight:650;cursor:pointer;border-radius:999px;padding:7px 13px;
@@ -175,7 +176,7 @@ input[type=range]:hover::-webkit-slider-thumb{transform:scale(1.15)}
 }
 .tc-name:hover{border-bottom-color:rgba(20,20,20,.22)}
 .tc-name:focus{border-bottom-color:currentColor}
-.tc-sub{font-size:11.5px;color:color-mix(in srgb,var(--tci) 55%,transparent);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tc-sub{font-size:11.5px;color:color-mix(in srgb,var(--tci) 55%,transparent);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:0 1 auto}
 .spacer{flex:1}
 .tc-btns{display:flex;gap:6px;flex:none}
 .icon-btn{
@@ -208,7 +209,11 @@ input[type=range]:hover::-webkit-slider-thumb{transform:scale(1.15)}
 .seg-b.on{background:var(--tci);color:var(--tcb);opacity:1}
 
 /* ---------- 旋钮行（每小节一行，可多小节） ---------- */
-.stepwrap{overflow-x:auto;padding:2px 2px 6px}
+.stepwrap{overflow-x:auto;padding:2px 2px 6px;scrollbar-width:thin;scrollbar-color:#cfccc3 transparent}
+.stepwrap::-webkit-scrollbar{height:5px}
+.stepwrap::-webkit-scrollbar-thumb{background:#cfccc3;border-radius:4px}
+.dcells-all{scrollbar-width:thin;scrollbar-color:#cfccc3 transparent}
+.dcells-all::-webkit-scrollbar{height:5px}
 .barrow{display:flex;align-items:flex-start;gap:11px}
 .barrow+.barrow{margin-top:9px;padding-top:9px;border-top:1.5px dashed color-mix(in srgb,var(--tci) 17%,transparent)}
 .barnum{
@@ -290,9 +295,36 @@ kbd{font-family:var(--mono);font-size:10.5px;background:var(--soft);border:1px s
 ::-webkit-scrollbar-thumb:hover{background:#b4b1a7;background-clip:padding-box}
 ::-webkit-scrollbar-track{background:transparent}
 @media (max-width:760px){
+  .app{padding:18px 12px 48px}
   .transport{border-radius:24px;padding:10px 14px;gap:8px 12px}
   .cc-btns{margin-left:0;width:100%}
   .cseg{flex-basis:86px;min-width:86px}
   .slot{width:40px}.stepnum{width:40px}
+  .slot.gap{margin-left:7px}.stepnum.gap{margin-left:7px}
+  .dial{width:38px;height:38px}
   .tc-sub{display:none}
+  .tcard{padding:14px 14px 12px}
+  .ccard{padding:14px 14px 12px}
+  .tc-name{font-size:18px}
+  .tctl input[type=range]{width:64px}
+  .chip input[type=range]{width:60px}
+}
+@media (max-width:560px){
+  .transport{gap:7px 10px;padding:9px 12px}
+  .sep{display:none}
+  .slot{width:34px}.stepnum{width:34px}
+  .slot.gap{margin-left:5px}.stepnum.gap{margin-left:5px}
+  .dial{width:32px;height:32px}
+  .dial .cap{font-size:8px;inset:7px}
+  .dcell{height:14px}
+  .cc-sub{display:none}
+}
+@media (max-width:420px){
+  .slot{width:30px}.stepnum{width:30px}
+  .slot.gap{margin-left:4px}.stepnum.gap{margin-left:4px}
+  .dial{width:28px;height:28px}
+  .barnum{margin-top:14px}
+  .btn{padding:7px 11px;font-size:12px}
+  .btn.primary{min-width:74px}
+  select{max-width:34vw}
 }
