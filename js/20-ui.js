@@ -97,8 +97,8 @@ function renderChord(){
   head.querySelectorAll('button[data-act]').forEach(b=>b.addEventListener('click',()=>{
     const a=b.dataset.act;
     if(a==='rand'){
-      setProg(randomProgression(),false); audChord(state.prog[0]);
-      toast('🎲 已按「'+STYLE().name+'」换了一条和弦进行');
+      const nb=randomSameStyle(); audChord(state.prog[0]);
+      toast('🎲 已按「'+STYLE().name+'」换了一条 '+nb+' 小节（'+progBeats()+' 拍）的和弦进行');
     }
     else if(a==='cmute'){
       chordMute=!chordMute; save();

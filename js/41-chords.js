@@ -80,6 +80,13 @@ function progFor(tr){
   return has?deriveProgression(tr.seq):randomProgression();
 }
 const ensureProg=()=>{ fitProg(); return state.prog; };
+/* 🎲 随机同风格：整条进行重生成，小节数也在 1–4 里加权随机（2 小节最常见），每次连点长短都不同 */
+function randomSameStyle(){
+  const nb=pick([1,2,2,2,2,3,3,4,4]);
+  if(nb!==progBars()) state.progBars=nb;
+  setProg(randomProgression(),false);                // fitProg 按新的 progBeats 铺满
+  return nb;
+}
 /* 改和弦轨自己的小节数（1–8），与声部小节数无关 */
 function setProgBars(n){
   n=clamp(n|0,1,MAX_BARS);

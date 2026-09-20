@@ -104,7 +104,7 @@ const expose=`
 ;globalThis.__T={state,SP_:()=>SP_,setStyle,optimizeMelody,setStep,setBars,fillBass,fillArp,fillPad,autoArrange,
   exportMidi,loadSaved,resetSeq,clearSeqs,clearTracksKeep,chordInstOf,randomProgression,fitProg,splitSeg,segLen,delSeg,setSegChord,
   segOfStep,chordAtFor,progFor,degOfRow,scLen,stepsOf,barsOf,songBeats,songBars,refreshAll,save,DEMO_MEL,clearTrack,randomizeForTrack,
-  setProgBars,progBeats,makeTrack,progTiled};`;
+  setProgBars,progBeats,makeTrack,progTiled,randomSameStyle};`;
 try{ vm.runInContext(js+expose,sandbox); }catch(e){ console.log('LOAD_FAIL:',e.stack.split('\n').slice(0,4).join('\n')); process.exit(1); }
 const T=sandbox.__T;
 let pass=0,fail=0;
@@ -314,6 +314,22 @@ const sv8=JSON.parse(store['polyseq.v7']);
 chk('存档含 progBars / chordVol',sv8.progBars===1&&typeof sv8.chordVol==='number');
 T.loadSaved();
 chk('读回：progBars 还原为 1',T.progBeats()===4);
+
+console.log('== 9. 🎲 随机同风格：小节数也会变化 ==');
+const nbSeen=new Set();
+let ok9=true, why9='';
+for(let i=0;i<24;i++){
+  try{
+    const nb=T.randomSameStyle();
+    nbSeen.add(nb);
+    if(T.state.prog.reduce((a,c)=>a+c.beats,0)!==nb*4){ ok9=false; why9='第'+(i+1)+'次总拍数与小节数不符'; break; }
+    if(T.state.progEdited!==false){ ok9=false; why9='随机后不应标记为手动'; break; }
+  }catch(e){ ok9=false; why9='抛异常: '+e.message; break; }
+}
+chk('连点 24 次：总拍数始终与随机到的小节数一致',ok9,why9);
+chk('连点 24 次：覆盖 ≥2 种小节数',nbSeen.size>=2,'seen='+[...nbSeen].join(','));
+const nb9=T.randomSameStyle();
+chk('随机后和弦铺满整条（'+nb9+' 小节）',T.state.prog.reduce((a,c)=>a+c.beats,0)===nb9*4);
 
 console.log('\n=== '+(fail?fail+' 项失败':'全部通过')+'（'+pass+' 通过 / '+fail+' 失败）===');
 process.exit(fail?1:0);
