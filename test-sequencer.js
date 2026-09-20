@@ -315,21 +315,41 @@ chk('存档含 progBars / chordVol',sv8.progBars===1&&typeof sv8.chordVol==='num
 T.loadSaved();
 chk('读回：progBars 还原为 1',T.progBeats()===4);
 
-console.log('== 9. 🎲 随机同风格：小节数也会变化 ==');
-const nbSeen=new Set();
+console.log('== 9. 🎲 随机同风格：保持当前小节数 ==');
+T.setProgBars(3);
 let ok9=true, why9='';
-for(let i=0;i<24;i++){
+for(let i=0;i<12;i++){
   try{
-    const nb=T.randomSameStyle();
-    nbSeen.add(nb);
-    if(T.state.prog.reduce((a,c)=>a+c.beats,0)!==nb*4){ ok9=false; why9='第'+(i+1)+'次总拍数与小节数不符'; break; }
+    T.randomSameStyle();
+    if(T.progBeats()!==12){ ok9=false; why9='第'+(i+1)+'次小节数被改变'; break; }
+    if(T.state.prog.reduce((a,c)=>a+c.beats,0)!==12){ ok9=false; why9='第'+(i+1)+'次总拍数不对'; break; }
     if(T.state.progEdited!==false){ ok9=false; why9='随机后不应标记为手动'; break; }
   }catch(e){ ok9=false; why9='抛异常: '+e.message; break; }
 }
-chk('连点 24 次：总拍数始终与随机到的小节数一致',ok9,why9);
-chk('连点 24 次：覆盖 ≥2 种小节数',nbSeen.size>=2,'seen='+[...nbSeen].join(','));
-const nb9=T.randomSameStyle();
-chk('随机后和弦铺满整条（'+nb9+' 小节）',T.state.prog.reduce((a,c)=>a+c.beats,0)===nb9*4);
+chk('连点 12 次：小节数始终为 3（12 拍）且和弦铺满',ok9,why9);
+T.setProgBars(1);
+chk('手动改回 1 小节立即生效',T.progBeats()===4);
+
+console.log('== 10. 和弦一变，各声部（除鼓）音高自动吸附新和弦 ==');
+T.setProgBars(1);
+T.state.prog=[{root:0,beats:4,seventh:false}];
+T.fitProg();                                      // 全曲一个和弦
+const ca0=T.chordAtFor(T.state.prog,16);
+const badRows=[]; for(let r=0;r<8;r++) if(!ca0[0].has(T.degOfRow(r))) badRows.push(r);
+chk('存在和弦外的行可摆放',badRows.length>=2,'badRows='+badRows.length);
+const trh=T.makeTrack('inst','吸附测试','piano',0);
+trh.follow=false;                                 // 无视跟随开关：独立声部也要跟
+T.state.tracks.push(trh);                         // makeTrack 不入列：手动加入模拟真实声部
+T.resetSeq(trh);
+badRows.slice(0,4).forEach((r,k)=>T.setStep(trh,k*4,r,false));
+chk('吸附前确有音符在和弦外',trh.seq.some((r,s)=>r>=0&&!ca0[s].has(T.degOfRow(r))));
+T.randomSameStyle();                              // 🎲 换一条 → 内部触发 reharmonizeAll
+T.state.tracks.pop();                             // 断言完移除，避免污染后续用例
+const ca10=T.chordAtFor(T.state.prog,T.stepsOf(trh));
+chk('🎲 换和弦后：所有音符落进新和弦内',trh.seq.every((r,s)=>r===-1||ca10[s].has(T.degOfRow(r))));
+chk('🎲 换和弦后：userSeq 素材同步挪动（✨ 不会把旧音变回来）',
+  (trh.userSeq||[]).every((r,s)=>r===-1||ca10[s].has(T.degOfRow(r))));
+chk('吸附保留旋律轮廓（不是全吸成同一个音）',new Set(trh.seq.filter(v=>v>=0)).size>=2);
 
 console.log('\n=== '+(fail?fail+' 项失败':'全部通过')+'（'+pass+' 通过 / '+fail+' 失败）===');
 process.exit(fail?1:0);

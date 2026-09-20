@@ -72,7 +72,7 @@ styleSel.addEventListener('change',()=>{
     const s=styleDrumPick(barsOf(d)); d.p=s.p; d.drum=s.id;
     refreshDrumCells(d); refreshSub(d);
   }
-  if(!state.progEdited) state.prog=randomProgression();   // 和弦进行轨跟随风格（手动改过则保留）
+  if(!state.progEdited){ state.prog=randomProgression(); reharmonizeAll(); }   // 和弦进行轨跟随风格（手动改过则保留）
   fitProg();
   $('bpm').value=bpm; $('bpmVal').textContent=bpm;
   $('swing').value=swingPct; $('swingVal').textContent=swingPct+'%';

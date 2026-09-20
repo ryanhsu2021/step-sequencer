@@ -98,7 +98,7 @@ function renderChord(){
     const a=b.dataset.act;
     if(a==='rand'){
       const nb=randomSameStyle(); audChord(state.prog[0]);
-      toast('🎲 已按「'+STYLE().name+'」换了一条 '+nb+' 小节（'+progBeats()+' 拍）的和弦进行');
+      toast('🎲 已按「'+STYLE().name+'」换了一条和弦进行（保持 '+nb+' 小节 / '+progBeats()+' 拍）');
     }
     else if(a==='cmute'){
       chordMute=!chordMute; save();
@@ -230,7 +230,7 @@ function buildPicker(){
 function setSegChord(i,root,seventh){
   const p=fitProg(), c=p[i]; if(!c) return;
   p[i]=mkChord(root,c.beats,seventh===undefined?c.seventh:seventh);
-  state.progEdited=true; save(); audChord(p[i]);
+  state.progEdited=true; reharmonizeAll(); save(); audChord(p[i]);
 }
 function splitSeg(i){
   const p=fitProg(), c=p[i]; if(!c) return;
@@ -238,7 +238,7 @@ function splitSeg(i){
   const a=Math.floor(c.beats/2), b=c.beats-a;
   p.splice(i,1,mkChord(c.root,a,c.seventh),mkChord(c.root,b,c.seventh));
   state.progEdited=true; chordEdit=i+1;
-  renderChord(); save();
+  reharmonizeAll(); renderChord(); save();
   toast('已插入第 '+(i+2)+' 个和弦——点它挑个新和弦');
 }
 function segLen(i,d){
@@ -247,7 +247,7 @@ function segLen(i,d){
   if(!nb){ toast('整曲只有这一个和弦'); return; }
   if(d>0){ if(nb.beats<2){ toast('相邻的和弦只剩 1 拍，给不出更多'); return; } c.beats++; nb.beats--; }
   else{ if(c.beats<2){ toast('最短 1 拍'); return; } c.beats--; nb.beats++; }
-  state.progEdited=true; renderChord(); save();
+  state.progEdited=true; reharmonizeAll(); renderChord(); save();
 }
 function delSeg(i){
   const p=fitProg();
@@ -255,7 +255,7 @@ function delSeg(i){
   const c=p[i], nb=p[i+1]||p[i-1];
   nb.beats+=c.beats; p.splice(i,1);
   if(chordEdit!=null) chordEdit=chordEdit>=p.length?null:chordEdit;
-  state.progEdited=true; renderChord(); save();
+  state.progEdited=true; reharmonizeAll(); renderChord(); save();
   toast('已删除一个和弦，拍数并入相邻段');
 }
 

@@ -12,11 +12,19 @@ const INSTRUMENTS=[
   {id:'guitar', name:'尼龙吉他',   group:'色彩'},
   {id:'bell',   name:'钟琴',       group:'色彩'},
   {id:'marimba',name:'马林巴',     group:'色彩'},
+  {id:'musicbox',name:'音乐盒',    group:'色彩'},
+  {id:'vibes',  name:'电颤琴',     group:'色彩'},
+  {id:'koto',   name:'古筝',       group:'色彩'},
   {id:'strings',name:'弦乐群',     group:'氛围'},
   {id:'pad',    name:'合成铺底',   group:'氛围'},
+  {id:'choir',  name:'人声合唱',   group:'氛围'},
+  {id:'flute',  name:'长笛',       group:'氛围'},
   {id:'lead',   name:'合成主音',   group:'合成'},
+  {id:'brass',  name:'合成铜管',   group:'合成'},
+  {id:'chip',   name:'芯片音',     group:'合成'},
   {id:'bass',   name:'电贝斯',     group:'低音'},
   {id:'subbass',name:'合成低音',   group:'低音'},
+  {id:'acid',   name:'酸性贝斯',   group:'低音'},
 ];
 const INST_NAME=id=>(INSTRUMENTS.find(i=>i.id===id)||{}).name||id;
 

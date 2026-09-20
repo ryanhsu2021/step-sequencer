@@ -44,7 +44,8 @@ function sendMidiDrum(id,t){
 /* Standard MIDI File（format 1，多轨） */
 function vlq(n){ const b=[n&0x7f]; n>>=7; while(n>0){ b.unshift((n&0x7f)|0x80); n>>=7; } return b; }
 const ascii=s=>{ const ok=/^[\x20-\x7e]*$/.test(s); const str=ok?s:'Track'; return [...str].map(c=>c.charCodeAt(0)&0x7f); };
-const GM_PROG={piano:0,epiano:4,organ:19,pluck:46,guitar:24,bell:14,marimba:12,strings:48,pad:89,lead:80,bass:33,subbass:38};
+const GM_PROG={piano:0,epiano:4,organ:19,pluck:46,guitar:24,bell:14,marimba:12,strings:48,pad:89,lead:80,bass:33,subbass:38,
+  musicbox:10,vibes:11,koto:107,choir:52,flute:73,brass:62,chip:80,acid:38};
 function midiTrackChunk(events,name,program,channel){
   const body=[]; let last=0;
   const push=(tick,...bytes)=>{ body.push(...vlq(tick-last),...bytes); last=tick; };

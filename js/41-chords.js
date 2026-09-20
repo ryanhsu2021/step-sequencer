@@ -80,24 +80,52 @@ function progFor(tr){
   return has?deriveProgression(tr.seq):randomProgression();
 }
 const ensureProg=()=>{ fitProg(); return state.prog; };
-/* 🎲 随机同风格：整条进行重生成，小节数也在 1–4 里加权随机（2 小节最常见），每次连点长短都不同 */
+/* 🎲 随机同风格：只换和弦内容，小节数保持当前值不动 */
 function randomSameStyle(){
-  const nb=pick([1,2,2,2,2,3,3,4,4]);
-  if(nb!==progBars()) state.progBars=nb;
-  setProg(randomProgression(),false);                // fitProg 按新的 progBeats 铺满
-  return nb;
+  setProg(randomProgression(),false);                // randomProgression 按当前 progBeats 铺满
+  return progBars();
 }
 /* 改和弦轨自己的小节数（1–8），与声部小节数无关 */
 function setProgBars(n){
   n=clamp(n|0,1,MAX_BARS);
   if(n===progBars()) return;
   state.progBars=n; chordEdit=null;
-  fitProg(); renderChord(); save();
-  toast('和弦进行轨 → '+n+' 小节（'+progBeats()+' 拍，与声部小节数无关）');
+  fitProg(); reharmonizeAll(); renderChord(); save();
+  toast('和弦进行轨 → '+n+' 小节（'+progBeats()+' 拍，与声部小节数无关，各声部音高已随新和弦对齐）');
 }
 function setProg(p,edited){
   state.prog=p; state.progEdited=!!edited; chordEdit=null;
-  fitProg(); renderChord(); save();
+  fitProg(); reharmonizeAll(); renderChord(); save();
+}
+/* 和弦轨一变，所有旋律/贝斯/琶音声部的现有音符立刻吸附到最近的和弦音（鼓除外；无视跟随开关——
+   独立和声的声部只是 ✨/🎼 生成时自己推和声，和弦轨变了它们照样跟着挪） */
+function reharmonizeAll(){
+  for(const tr of state.tracks){
+    if(tr.kind!=='inst') continue;
+    const n=stepsOf(tr);
+    if(!tr.seq.some(v=>v>=0)) continue;
+    const ca=chordAtFor(state.prog,n);
+    let changed=false;
+    for(let s=0;s<n;s++){
+      const r=tr.seq[s]; if(r<0||!ca[s]||!ca[s].size) continue;
+      if(ca[s].has(degOfRow(r))) continue;
+      let best=r;
+      for(let d=1;d<ROWS;d++){
+        const lo=r-d, hi=r+d;
+        if(lo>=0&&ca[s].has(degOfRow(lo))){ best=lo; break; }
+        if(hi<ROWS&&ca[s].has(degOfRow(hi))){ best=hi; break; }
+      }
+      tr.seq[s]=best;
+      if(tr.last) tr.last[s]=best;
+      if(Array.isArray(tr.userSeq)&&tr.userSeq[s]>=0) tr.userSeq[s]=best;   // 手动素材也一起挪，✨ 不会把旧音变回来
+      changed=true;
+    }
+    if(changed){
+      const card=view.cards.get(tr.id);
+      if(card&&card.kind==='inst') for(let s=0;s<n;s++) updateDial(tr,s);
+    }
+  }
+  save();
 }
 /* ---- 和弦进行轨发声：播放时每拍触发当前和弦，音色 / 音量可选（默认跟风格） ---- */
 let chordInst='', chordMute=false, chordVol=.8;

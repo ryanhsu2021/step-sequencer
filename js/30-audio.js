@@ -181,6 +181,44 @@ const VOICE={
     const lp=audioCtx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=520;
     o.connect(g); g.connect(lp); lp.connect(dest); o.start(t); o.stop(t+dur*1.5);
   },
+  /* ---- 扩充音色 ---- */
+  musicbox(f,t,dest,vel){
+    fmVoice(f,t,dest,{ratio:3.01,index:1.15,decay:.09,amp:.4*vel,dur:1.7,attack:.002});
+    fmVoice(f*4,t,dest,{ratio:1,index:.4,decay:.05,amp:.08*vel,dur:.7,attack:.002});
+  },
+  vibes(f,t,dest,vel){
+    fmVoice(f,t,dest,{ratio:2,index:.75,decay:.32,amp:.42*vel,dur:2.4,attack:.004});
+    fmVoice(f*3.98,t,dest,{ratio:1,index:.28,decay:.1,amp:.09*vel,dur:1.1,attack:.003});
+  },
+  koto(f,t,dest,vel){
+    additive(f,t,dest,[[1,1,1.7],[2,.34,.75],[3,.17,.42],[5.01,.06,.22]],vel*.92);
+    noiseBurst(t,dest,.07*vel,.02,2600);
+  },
+  choir(f,t,dest,vel,dur){
+    sustainOsc(f,t,dest,{types:['sawtooth','sine'],mix:.65,attack:.26,dur:dur*1.2,peak:.2*vel,sus:.88,
+      cutoff:1850,release:.55,lfo:{rate:5,depth:.022}});
+    sustainOsc(f*2,t,dest,{types:['sine'],attack:.3,dur:dur,peak:.05*vel,sus:.8,cutoff:2600,release:.5});
+  },
+  flute(f,t,dest,vel,dur){
+    sustainOsc(f,t,dest,{types:['sine'],attack:.07,dur,peak:.27*vel,sus:.85,cutoff:3900,release:.22,
+      lfo:{rate:5.4,depth:.007}});
+    noiseBurst(t,dest,.05*vel,.09,3200);
+  },
+  brass(f,t,dest,vel,dur){
+    sustainOsc(f,t,dest,{types:['sawtooth','sawtooth'],mix:1.4,attack:.055,dur,peak:.22*vel,sus:.86,
+      cutoff:2700,release:.2,lfo:{rate:4.6,depth:.008}});
+  },
+  chip(f,t,dest,vel,dur){
+    sustainOsc(f,t,dest,{types:['square'],attack:.003,dur,peak:.19*vel,sus:.34,cutoff:3400,release:.045});
+  },
+  acid(f,t,dest,vel,dur){
+    sustainOsc(f,t,dest,{types:['sawtooth','square'],mix:1.2,attack:.004,dur:dur*.85,peak:.23*vel,sus:.42,
+      cutoff:1150,release:.1});
+    const o=audioCtx.createOscillator(); o.type='sine'; o.frequency.value=f;
+    const g=audioCtx.createGain(); g.gain.setValueAtTime(.1*vel,t);
+    g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+    o.connect(g); g.connect(dest); o.start(t); o.stop(t+dur+.1);
+  },
 };
 function playTrackNote(tr,row,t){
   ensureAudio();
