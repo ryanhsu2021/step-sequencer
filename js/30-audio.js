@@ -9,22 +9,22 @@ let bpm=112, swingPct=0, volume=80;
 /* ============ 效果器预设 ============ */
 /* 每声部延时：sync＝以「四分音符＝60/bpm 秒」为基准的倍率（随 BPM 自动同步）；ms＝固定毫秒；fb＝回声次数；wet＝效果量 */
 const DELAY_PRESETS=[
-  {id:'off',    name:'延时 关'},
-  {id:'slap',   name:'拍打回声',  ms:.09,  fb:.18, wet:.22, damp:4200},
-  {id:'8th',    name:'1/8 短延',  sync:.5, fb:.28, wet:.26, damp:3600},
-  {id:'dot8',   name:'附点 1/8',  sync:.75,fb:.38, wet:.28, damp:3200},
-  {id:'quarter',name:'1/4 长回声',sync:1,  fb:.44, wet:.28, damp:2800},
-  {id:'space',  name:'空间漂移',  sync:1.5,fb:.52, wet:.32, damp:2200},
+  {id:'off',    name:'延时 Delay · 关'},
+  {id:'slap',   name:'拍打回声 Slapback',   ms:.09,  fb:.18, wet:.22, damp:4200},
+  {id:'8th',    name:'1/8 短延 8th',        sync:.5, fb:.28, wet:.26, damp:3600},
+  {id:'dot8',   name:'附点 1/8 Dotted 8th', sync:.75,fb:.38, wet:.28, damp:3200},
+  {id:'quarter',name:'1/4 回声 1/4 Note',   sync:1,  fb:.44, wet:.28, damp:2800},
+  {id:'space',  name:'空间漂移 Ambient Echo',sync:1.5,fb:.52, wet:.32, damp:2200},
 ];
 const DELAY_IDS=new Set(DELAY_PRESETS.map(p=>p.id));
 /* 总输出混响（卷积）：decay＝衰减秒数；wet＝基准湿度（实际湿度 × revMix 强度） */
 const REV_PRESETS=[
-  {id:'off',      name:'混响 关'},
-  {id:'room',     name:'房间',     decay:.9, wet:.16},
-  {id:'plate',    name:'板式',     decay:1.9,wet:.24},
-  {id:'hall',     name:'音乐厅',   decay:3.2,wet:.30},
-  {id:'cathedral',name:'教堂',     decay:4.6,wet:.34},
-  {id:'ambient',  name:'氛围空间', decay:6.5,wet:.38},
+  {id:'off',      name:'混响 Reverb · 关'},
+  {id:'room',     name:'房间 Room',       decay:.9, wet:.16},
+  {id:'plate',    name:'板式 Plate',      decay:1.9,wet:.24},
+  {id:'hall',     name:'音乐厅 Hall',     decay:3.2,wet:.30},
+  {id:'cathedral',name:'教堂 Cathedral',  decay:4.6,wet:.34},
+  {id:'ambient',  name:'氛围空间 Ambient',decay:6.5,wet:.38},
 ];
 const REV_IDS=new Set(REV_PRESETS.map(p=>p.id));
 let revPreset='off', revMix=1, revConv=null, revWet=null, revDecay=-1;
@@ -288,13 +288,14 @@ const VOICE={
     o.connect(g); g.connect(dest); o.start(t); o.stop(t+dur+.1);
   },
 };
-function playTrackNote(tr,row,t){
+function playTrackNote(tr,row,t,vel){
   ensureAudio();
   const dest=busFor(tr); if(!dest) return;
   const freq=440*Math.pow(2,(rowMidi(row,tr.oct)-69)/12);
-  const vel=.82+Math.random()*.16;
-  (VOICE[tr.inst]||VOICE.piano)(freq,t,dest,vel,stepDur()*1.9);
-  sendMidiNote(tr,row,t);
+  /* 手动力度优先；未手动调过的步保留 ±随机人性化 */
+  const v=(vel==null?.82+Math.random()*.16:vel*(.94+Math.random()*.12));
+  (VOICE[tr.inst]||VOICE.piano)(freq,t,dest,v,stepDur()*1.9);
+  sendMidiNote(tr,row,t,vel);
 }
 /* ============ 鼓机合成 ============ */
 const GM_DRUM={kick:36,snare:38,clap:39,hat:42,ohat:46,tom:45,ride:51};

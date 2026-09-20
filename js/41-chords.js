@@ -116,6 +116,7 @@ function reharmonizeTrack(tr){
   for(let s=0;s<n;s++){
     const r=tr.seq[s]; if(r<0||!ca[s]||!ca[s].size) continue;
     if(ca[s].has(degOfRow(r))) continue;
+    if(!changed) pushUndo();                       // 真的有音要挪才存快照
     let best=r;
     for(let d=1;d<ROWS;d++){
       const lo=r-d, hi=r+d;

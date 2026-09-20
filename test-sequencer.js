@@ -94,7 +94,7 @@ const sandbox={
   requestAnimationFrame:()=>0,
   Option:class{constructor(text,value){this.text=text;this.value=String(value);this.disabled=false;}},
   URL:{createObjectURL:()=>'blob:test',revokeObjectURL(){}},
-  Blob:class{constructor(parts){this.parts=parts;}},
+  Blob:class{constructor(parts){this.parts=parts;(globalThis.__blobs=globalThis.__blobs||[]).push(parts);}},
   setTimeout:(fn)=>{fn();return 1;}, clearTimeout(){}, setInterval:()=>1, clearInterval(){},
   console, Math, JSON, Uint8Array, Float64Array, Int16Array, Array, Object, Set, Map, String, Number, Boolean, Date, Promise,
 };
@@ -105,8 +105,9 @@ const expose=`
   exportMidi,loadSaved,resetSeq,clearSeqs,clearTracksKeep,chordInstOf,randomProgression,fitProg,splitSeg,segLen,delSeg,setSegChord,
   segOfStep,chordAtFor,progFor,degOfRow,scLen,stepsOf,barsOf,songBeats,songBars,refreshAll,save,DEMO_MEL,clearTrack,randomizeForTrack,
   setProgBars,progBeats,makeTrack,progTiled,randomSameStyle,reharmonizeTrack,
+  velOf,pushUndo,undo,undoDepth:()=>undoStack.length,
   DELAY_PRESETS,REV_PRESETS,setTrackFx,setReverb,revGetter:()=>revPreset,trackFx:t=>t.fx,setRevMix:v=>{revMix=v;},getRevMix:()=>revMix};`;
-try{ vm.runInContext(js+expose,sandbox); }catch(e){ console.log('LOAD_FAIL:',e.stack.split('\n').slice(0,4).join('\n')); process.exit(1); }
+try{ vm.runInContext(js+expose,sandbox); }catch(e){ console.log('LOAD_FAIL:',e.stack); process.exit(1); }
 const T=sandbox.__T;
 let pass=0,fail=0;
 const chk=(name,cond,extra)=>{ if(cond){pass++;console.log('  ✓ '+name);} else {fail++;console.log('  ✗ '+name+(extra?'｜'+extra:''));} };
@@ -272,7 +273,7 @@ T.setStep(T.state.tracks[0],0,5,false);
 const okOpt=T.optimizeMelody(T.state.tracks[0]);
 chk('清空声部后优化不崩且有音',okOpt===true&&T.state.tracks[0].seq.some(v=>v>=0));
 
-console.log('== 8. 和弦轨长度独立 + ♻ 跟随和弦生效 ==');
+console.log('== 8. 和弦轨长度独立 + 和声跟随生效 ==');
 /* 8a 声部小节数变化，和弦轨不动 */
 T.setProgBars(2);
 const pSnap=JSON.stringify(T.state.prog.map(c=>[c.root,c.beats]));
@@ -332,7 +333,7 @@ chk('连点 16 次：级数确实在换（覆盖 ≥3 种）',degSeen.size>=3,'s
 T.setProgBars(1);
 chk('手动改回 1 小节立即生效',T.progBeats()===4);
 
-console.log('== 10. 「⟳ 对齐和弦」纯手动触发：点才吸附，调和弦轨不自动挪声部 ==');
+console.log('== 10. 「⟳ 吸附和弦」纯手动触发：点才吸附，调和弦轨不自动挪声部 ==');
 T.setProgBars(1);
 T.state.prog=[{root:0,beats:4,seventh:false}];
 T.fitProg();                                      // 全曲一个和弦
@@ -398,6 +399,65 @@ T.loadSaved();
 chk('读回：reverb / revMix / fx / fxMix 还原',T.revGetter()==='ambient'&&T.getRevMix()===.6
   &&T.state.tracks.find(t=>t.fx==='space'&&t.fxMix===.4)!==undefined);
 T.setReverb('off'); T.setTrackFx(tfx,'off'); T.setRevMix(1);
+
+console.log('== 12. 每步力度 Velocity：默认 / 持久化 / 平铺 / MIDI 导出 ==');
+const trv=T.makeTrack('inst','力度测试','piano',0);
+T.state.tracks.push(trv);
+chk('新声部未调力度：velOf 返回 null（播放走人性化默认）',trv.vel===null&&T.velOf(trv,0)===null);
+T.setStep(trv,0,5,false);
+T.setStep(trv,1,4,false);
+chk('摆音后仍未调力度：仍为 null',T.velOf(trv,0)===null);
+trv.vel=new Array(T.stepsOf(trv)).fill(null);
+trv.vel[0]=.5; trv.vel[1]=1;
+chk('velOf 返回手动力度',T.velOf(trv,0)===.5&&T.velOf(trv,1)===1);
+T.save();
+const svTr=JSON.parse(store['polyseq.v7']).tracks.find(t=>t.name==='力度测试');
+chk('存档包含 vel 数组',Array.isArray(svTr.vel)&&svTr.vel[0]===.5&&svTr.vel[1]===1);
+T.loadSaved();
+const trv2=T.state.tracks.find(t=>t.name==='力度测试');
+chk('读回：vel 还原',T.velOf(trv2,0)===.5&&T.velOf(trv2,1)===1);
+T.setBars(trv2,2);
+chk('加长到 2 小节：力度随内容平铺到后面小节',T.velOf(trv2,16)===.5);
+T.exportMidi();
+{ const parts=(globalThis.__blobs||[])[(globalThis.__blobs||[]).length-1];
+  console.log('DBG2 parts=',parts&&parts.length,parts&&parts.map(p=>p&&p.length));
+  const u8=parts&&parts.find(p=>p&&p.length>200);
+  console.log('DBG2 u8len=',u8&&u8.length);
+  if(u8){ const on=[]; for(let i=0;i<u8.length-2;i++){ if((u8[i]&0xf0)===0x90&&u8[i+2]>0) on.push(u8[i].toString(16)+':'+u8[i+1]+':'+u8[i+2]); } console.log('DBG2 ons=',on.join(' ')); }
+}
+const blobParts=(globalThis.__blobs||[])[(globalThis.__blobs||[]).length-1]||[];
+const smfBytes=blobParts.find(p=>p&&p.length>200);
+const vels=new Set();
+if(smfBytes){ for(let i=0;i<smfBytes.length-2;i++){ if((smfBytes[i]&0xf0)===0x90&&smfBytes[i+2]>0) vels.add(smfBytes[i+2]); } }
+chk('MIDI 导出带真实力度（64=.5 档 / 127=满档）',vels.has(64)&&vels.has(127),'vels='+[...vels].slice(0,8).join(','));
+
+console.log('== 13. 撤销 Undo：快照 / 恢复 / 空栈安全 ==');
+const d0=T.undoDepth();
+const tru=T.makeTrack('inst','撤销测试','piano',0);
+T.state.tracks.push(tru);
+T.setStep(tru,0,7,false);
+const d1=T.undoDepth();
+T.setStep(tru,0,2,false);
+chk('setStep 每次入栈',T.undoDepth()===d1+1&&d1===d0+1);
+T.undo();
+const tru2=T.state.tracks.find(t=>t.name==='撤销测试');
+chk('撤销一次：第 0 步回到 7（对象被快照重建，引用已更新）',tru2&&tru2.seq[0]===7);
+T.undo();
+const tru3=T.state.tracks.find(t=>t.name==='撤销测试');
+chk('撤销两次：第 0 步回到空',tru3&&tru3.seq[0]===-1);
+const progRoots=JSON.stringify(T.state.prog.map(c=>c.root));
+T.setSegChord(0,(T.state.prog[0].root+1)%T.scLen(),undefined);
+T.undo();
+chk('撤销和弦编辑：级数还原',JSON.stringify(T.state.prog.map(c=>c.root))===progRoots);
+const trr=T.state.tracks.find(t=>t.name==='撤销测试');
+const seqBeforeR=snap(trr);
+T.randomizeForTrack(trr);
+T.undo();
+const trr2=T.state.tracks.find(t=>t.name==='撤销测试');
+chk('撤销 🎲 随机生成：音序原样恢复',snap(trr2)===seqBeforeR);
+let threw=false;
+try{ while(T.undoDepth()>0) T.undo(); T.undo(); }catch(e){ threw=true; }
+chk('清空栈后再撤销：不崩溃（提示「没有可撤销的操作」）',threw===false);
 
 console.log('\n=== '+(fail?fail+' 项失败':'全部通过')+'（'+pass+' 通过 / '+fail+' 失败）===');
 process.exit(fail?1:0);

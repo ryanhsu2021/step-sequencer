@@ -131,7 +131,7 @@ function autoArrange(){
   const pk=a=>a[(Math.random()*a.length)|0];
   const roles=[
     {name:'贝斯',inst:pk(SP_.bassI||['bass']),oct:-1,fill:fillBass},
-    {name:'和弦音型',inst:pk(SP_.chordI||['pluck','epiano','marimba']),oct:0,fill:fillArp},
+    {name:'琶音 Arp',inst:pk(SP_.chordI||['pluck','epiano','marimba']),oct:0,fill:fillArp},
   ];
   if(SP_.padRole) roles.push({name:'铺底',inst:pk(['pad','strings','organ']),oct:0,fill:fillPad});
   const made=[];
@@ -143,6 +143,6 @@ function autoArrange(){
   renderTracks();
   save();
   toast('🎼 '+STYLE().emoji+' 按「'+STYLE().name+'」+ 和弦进行轨编配：'
-    +(made.length?made.join(' + '):'（无空闲声部）')+(d?' + 鼓组':'')+' ——再点一次会不同');
+    +(made.length?made.join(' + '):'（无空闲声部）')+(d?' + 鼓组':'')+' ——再点一次会不同（↶ 可撤销）');
 }
 

@@ -31,10 +31,11 @@ function populateMidiOuts(){
 midiOutSel.addEventListener('change',()=>{
   midiOut=(midiOutSel.value==='off'||!midiAccess)?null:(midiAccess.outputs.get(midiOutSel.value)||null);
 });
-function sendMidiNote(tr,row,t){
+function sendMidiNote(tr,row,t,vel){
   if(!midiOut) return;
   const ch=midiChan(tr), note=clamp(rowMidi(row,tr.oct),0,127);
-  try{ midiOut.send([0x90|ch,note,88],t); midiOut.send([0x80|ch,note,0],t+stepDur()); }catch(e){}
+  const vv=vel==null?88:clamp(Math.round(vel*127),1,127);
+  try{ midiOut.send([0x90|ch,note,vv],t); midiOut.send([0x80|ch,note,0],t+stepDur()); }catch(e){}
 }
 function sendMidiDrum(id,t){
   if(!midiOut) return;
@@ -66,7 +67,8 @@ function exportMidi(){
       for(let s=0;s<n;s++){
         if(tr.seq[s]===-1) continue;
         const nte=clamp(rowMidi(tr.seq[s],tr.oct),0,127);
-        ev.push({tick:s*stepT,seq:1,bytes:[0x90|ch,nte,88]});
+        const vv=velOf(tr,s)==null?88:clamp(Math.round(velOf(tr,s)*127),1,127);
+        ev.push({tick:s*stepT,seq:1,bytes:[0x90|ch,nte,vv]});
         ev.push({tick:(s+1)*stepT,seq:0,bytes:[0x80|ch,nte,0]});
       }
     }else{

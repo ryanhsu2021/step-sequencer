@@ -15,7 +15,7 @@ function scheduleStep(g,time){
     if(tr.mute) continue;
     if(solo&&!tr.solo) continue;
     const s=g%stepsOf(tr);                 // 各声部按自己的小节数循环
-    if(tr.kind==='inst'){ const r=tr.seq[s]; if(r!==undefined&&r!==-1) playTrackNote(tr,r,t); }
+    if(tr.kind==='inst'){ const r=tr.seq[s]; if(r!==undefined&&r!==-1) playTrackNote(tr,r,t,velOf(tr,s)); }
     else { for(const id of drumHits(tr,s)) playDrumHit(tr,id,t); }
   }
   if(g%4===0){                                    // 和弦进行轨：每拍触发一次当前和弦

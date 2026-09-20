@@ -13,7 +13,7 @@ function seedDefault(){
   mel.seq=DEMO_MEL.slice();
   mel.userSeq=mel.seq.slice();                       // 示例乐句视作用户素材：✨ 保留它的强拍锚点
   const bass=makeTrack('inst','贝斯',(SP_.bassI&&SP_.bassI[0])||'bass',-1);
-  const arp=makeTrack('inst','和弦音型',(SP_.chordI&&SP_.chordI[0])||'pluck',0);
+  const arp=makeTrack('inst','琶音 Arp',(SP_.chordI&&SP_.chordI[0])||'pluck',0);
   const drum=makeTrack('drum','鼓组');
   state.tracks=[mel,bass,arp,drum];
   recolor();
@@ -68,6 +68,7 @@ styleSel.title=styleTip();
 rootSel.addEventListener('change',()=>{rootIdx=+rootSel.value;refreshAll();renderChord();save();});
 modeSel.addEventListener('change',()=>{modeIdx=+modeSel.value;refreshAll();renderChord();save();});
 styleSel.addEventListener('change',()=>{
+  pushUndo();                                    // 风格切换会重写鼓组 / 和弦轨，可撤销
   setStyle(+styleSel.value);                     // 只同步 BPM / 摇摆 等全局项
   styleSel.title=styleTip();
   const d=state.tracks.find(t=>t.kind==='drum');

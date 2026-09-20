@@ -337,16 +337,17 @@ function trimToWindow(mel,keep,seed,dHi,N){
 }
 function optimizeForTrack(tr){
   if(tr.kind!=='inst') return;
+  pushUndo();
   const ok=optimizeMelody(tr);
   refreshAll(); save();
-  const src='和弦进行轨';
-  toast(ok?(STYLE().emoji+' 按「'+STYLE().name+'」+ '+src+' 重排「'+tr.name+'」——可连点得到不同版本'):'优化失败');
+  toast(ok?(STYLE().emoji+' 按「'+STYLE().name+'」+ 和弦进行轨 重排「'+tr.name+'」——可连点得到不同版本（↶ 可撤销）'):'和声重排失败');
 }
 /* 🎲 按当前风格从零随机生成一条全新旋律（无视现有内容；连点每次不同） */
 function randomizeForTrack(tr){
   if(tr.kind!=='inst') return;
+  pushUndo();
   const ok=optimizeMelody(tr,true);
   refreshAll(); save();
-  toast(ok?(STYLE().emoji+' 按「'+STYLE().name+'」给「'+tr.name+'」随机生成了一条新旋律——连点每次都不同'):'生成失败');
+  toast(ok?(STYLE().emoji+' 按「'+STYLE().name+'」给「'+tr.name+'」随机生成了一条新旋律——连点每次都不同（↶ 可撤销）'):'生成失败');
 }
 

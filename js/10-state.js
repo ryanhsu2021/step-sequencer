@@ -9,7 +9,7 @@ function makeTrack(kind,name,inst,oct){
   const t={
     id:++tid, kind:kind||'inst', name:name||('声部 '+tid),
     inst:inst||'piano', oct:oct||0, bars:1,
-    seq:[], last:[], userSeq:null,
+    seq:[], last:[], userSeq:null, vel:null,
     vol:.85, pan:0, mute:false, solo:false, fx:'off', fxMix:1,
     color:TRACK_COLORS[0], p:{},
   };
@@ -22,7 +22,11 @@ function resetSeq(t,n){
   t.seq=new Array(n).fill(-1);
   t.last=new Array(n).fill(-1);
   t.userSeq=null;
+  t.vel=null;
 }
+/* 每步力度：取该步的手动力度；未手动调过（null）→ 由播放层用默认人性化力度 */
+const velOf=(tr,s)=>(tr&&Array.isArray(tr.vel)&&tr.vel[s]!=null)?tr.vel[s]:null;
+const fitVelArr=(a,n)=>Array.from({length:n},(_,i)=>{const v=a?a[i]:null;return (typeof v==='number'&&v>=.2&&v<=1)?v:null;});
 /* 预设（16 步）→ 按小节平铺成 n 步 */
 function patForBars(p,bars){
   const n=clamp(bars,1,MAX_BARS)*BAR, o={};
@@ -44,6 +48,7 @@ function resizeTrack(tr,n){
     tr.seq=tileArr(tr.seq,n);
     tr.last=tileArr(tr.last,n);
     if(Array.isArray(tr.userSeq)&&tr.userSeq.length) tr.userSeq=tileArr(tr.userSeq,n);
+    if(Array.isArray(tr.vel)) tr.vel=fitVelArr(tileArr(tr.vel.map(v=>v==null?0:v),n).map(v=>v===0?null:v),n);
   }
   return tr;
 }
@@ -51,6 +56,7 @@ function resizeTrack(tr,n){
 function setBars(tr,n){
   n=clamp(n|0,1,MAX_BARS);
   if(n===barsOf(tr)) return;
+  pushUndo();
   const grow=n>barsOf(tr);
   tr.bars=n;
   resizeTrack(tr,stepsOf(tr));
@@ -64,6 +70,7 @@ const soloActive=()=>state.tracks.some(t=>t.solo);
 /* ---- 声部增删 ---- */
 function addTrack(kind,opts){
   if(state.tracks.length>=MAX_TRACKS){toast('最多 '+MAX_TRACKS+' 个声部');return null;}
+  pushUndo();
   const t=makeTrack(kind);
   if(opts) Object.assign(t,opts);
   if(kind==='drum'&&state.tracks.some(x=>x.kind==='drum')){toast('已经有一个鼓声部了');return null;}
@@ -75,6 +82,7 @@ function removeTrack(id){
   if(state.tracks.length<=1){toast('至少保留一个声部');return;}
   const i=state.tracks.findIndex(t=>t.id===id);
   if(i<0) return;
+  pushUndo();
   state.tracks.splice(i,1);
   busCache.delete(id);
   recolor(); save(); renderTracks();
@@ -85,6 +93,7 @@ function moveTrack(id,dir){
   const i=state.tracks.findIndex(t=>t.id===id), j=i+dir;
   if(i<0) return;
   if(j<0||j>=state.tracks.length){ toast(dir<0?'已经是第一个声部':'已经是最后一个声部'); return; }
+  pushUndo();
   const [t]=state.tracks.splice(i,1);
   state.tracks.splice(j,0,t);
   recolor(); save(); renderTracks();
@@ -107,6 +116,7 @@ function save(){
         chordVol:chordVol,
         tracks:state.tracks.map(t=>({kind:t.kind,name:t.name,inst:t.inst,oct:t.oct,bars:barsOf(t),seq:t.seq,
           useq:(t.kind==='inst'&&Array.isArray(t.userSeq))?t.userSeq:null,
+          vel:(t.kind==='inst'&&Array.isArray(t.vel))?t.vel:null,
           vol:t.vol,pan:t.pan,mute:t.mute,solo:t.solo,fx:t.fx||'off',fxMix:t.fxMix==null?1:t.fxMix,drum:t.drum,p:t.p}))
       }));
     }catch(e){}
@@ -145,6 +155,7 @@ function loadSaved(){
       t.bars=bars;
       Object.assign(t,{seq:fitArr(o.seq,bars*BAR),last:new Array(bars*BAR).fill(-1),
         userSeq:Array.isArray(o.useq)?fitArr(o.useq,bars*BAR):null,
+        vel:Array.isArray(o.vel)?fitVelArr(o.vel,bars*BAR):null,
         vol:o.vol==null?.85:o.vol,
         pan:o.pan||0,mute:!!o.mute,solo:!!o.solo,fx:DELAY_IDS.has(o.fx)?o.fx:'off',
         fxMix:(typeof o.fxMix==='number'&&o.fxMix>=0&&o.fxMix<=1)?o.fxMix:1,drum:o.drum||'pop',
@@ -158,6 +169,51 @@ function loadSaved(){
   }catch(e){ return false; }
 }
 const fitArr=(a,n)=>Array.from({length:n},(_,i)=>(a&&a[i]!==undefined)?clamp(a[i]|0,-1,ROWS-1):-1);
+
+/* ---- 撤销（Undo）：破坏性操作前 pushUndo() 存快照，Ctrl+Z / ↶ 撤销按钮回退 ---- */
+const undoStack=[]; const UNDO_MAX=60;
+function snapState(){
+  return JSON.stringify({
+    tracks:state.tracks.map(t=>({id:t.id,kind:t.kind,name:t.name,inst:t.inst,oct:t.oct,bars:barsOf(t),
+      seq:t.seq,useq:(t.kind==='inst'&&Array.isArray(t.userSeq))?t.userSeq:null,
+      vel:(t.kind==='inst'&&Array.isArray(t.vel))?t.vel:null,
+      vol:t.vol,pan:t.pan,mute:t.mute,solo:t.solo,fx:t.fx,fxMix:t.fxMix,drum:t.drum,p:t.p})),
+    prog:(state.prog||[]).map(c=>({r:c.root,s:c.seventh?1:0,b:c.beats})),
+    progBars:progBars(),progEdited:!!state.progEdited,rootIdx,modeIdx});
+}
+function pushUndo(){
+  try{ undoStack.push(snapState()); if(undoStack.length>UNDO_MAX) undoStack.shift(); }catch(e){}
+}
+function undo(){
+  const raw=undoStack.pop();
+  if(!raw){ toast('没有可撤销的操作了'); return; }
+  try{
+    const d=JSON.parse(raw);
+    busCache.clear();
+    rootIdx=d.rootIdx|0; modeIdx=d.modeIdx|0;
+    state.progEdited=!!d.progEdited; state.progBars=clamp(d.progBars|0,1,MAX_BARS);
+    state.prog=migrateProg(d.prog);
+    if(!state.prog.length) state.prog=randomProgression();
+    fitProg();
+    state.tracks=(d.tracks||[]).map(o=>{
+      const t=makeTrack(o.kind,o.name,o.inst,o.oct);
+      t.id=o.id;
+      const bars=clamp(o.bars|0,1,MAX_BARS);
+      t.bars=bars;
+      Object.assign(t,{seq:fitArr(o.seq,bars*BAR),last:new Array(bars*BAR).fill(-1),
+        userSeq:Array.isArray(o.useq)?fitArr(o.useq,bars*BAR):null,
+        vel:Array.isArray(o.vel)?fitVelArr(o.vel,bars*BAR):null,
+        vol:o.vol==null?.85:o.vol,pan:o.pan||0,mute:!!o.mute,solo:!!o.solo,
+        fx:DELAY_IDS.has(o.fx)?o.fx:'off',fxMix:o.fxMix==null?1:o.fxMix,drum:o.drum||'pop',
+        p:(o.kind==='drum'&&o.p)?patForBars(o.p,bars):t.p});
+      return t;
+    });
+    if(state.tracks.length) tid=Math.max(tid,...state.tracks.map(t=>t.id));
+    chordEdit=null;
+    recolor(); renderTracks(); save();
+    toast('↶ 已撤销上一步');
+  }catch(e){ toast('撤销失败（快照损坏）'); }
+}
 
 /* ---- 提示气泡 ---- */
 const toastEl=$('toast'); let toastTimer=null;

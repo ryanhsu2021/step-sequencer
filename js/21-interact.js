@@ -14,9 +14,10 @@ function auditionNote(tr,s){
   lastAudit=now;
   ensureAudio(); if(audioCtx.state!=='running') audioCtx.resume();
   const r=tr.seq[s];
-  if(r!==-1) playTrackNote(tr,r,audioCtx.currentTime+.02);
+  if(r!==-1) playTrackNote(tr,r,audioCtx.currentTime+.02,velOf(tr,s));
 }
 function setStep(tr,s,r,tap){
+  pushUndo();                                        // 每次手动编辑前存快照，Ctrl+Z 可回退
   if(tr.kind==='inst'){                            // 手动编辑才计入「用户素材」——✨ 优化的锚点来源
     if(!Array.isArray(tr.userSeq)||tr.userSeq.length!==tr.seq.length) tr.userSeq=tr.seq.slice();
     tr.userSeq[s]=r;
@@ -75,17 +76,31 @@ function attachDialEvents(el,tr,s){
     else if(e.key==='ArrowDown'||e.key==='ArrowLeft'){setStep(tr,s,rowOfPos(mod9(posOf(tr,s)-1)));e.preventDefault();}
     else if(e.key==='Delete'||e.key==='Backspace'){setStep(tr,s,-1,false);e.preventDefault();}
   });
+  /* 滚轮＝调节该步力度（Velocity）：有音符才生效；上滚增强、下滚减弱，步长 10% */
+  el.addEventListener('wheel',e=>{
+    if(tr.seq[s]===-1) return;
+    e.preventDefault();
+    if(!Array.isArray(tr.vel)) tr.vel=new Array(stepsOf(tr)).fill(null);
+    const cur=tr.vel[s]==null?.82:tr.vel[s];
+    const nv=clamp(Math.round((cur+(e.deltaY<0?.1:-.1))*10)/10,.2,1);
+    if(nv===cur) return;
+    tr.vel[s]=nv;
+    updateDial(tr,s); save();
+    auditionNote(tr,s);                              // 用新力度试听一下
+  },{passive:false});
 }
 
 /* ============ 声部级操作 ============ */
 function clearTrack(tr){
+  pushUndo();
   if(tr.kind==='drum'){ tr.p={}; tr.drum='custom'; refreshDrumCells(tr); }
-  else { const n=stepsOf(tr); tr.seq=new Array(n).fill(-1); tr.last=new Array(n).fill(-1); tr.userSeq=null; for(let s=0;s<n;s++) updateDial(tr,s); }
+  else { const n=stepsOf(tr); tr.seq=new Array(n).fill(-1); tr.last=new Array(n).fill(-1); tr.userSeq=null; tr.vel=null; for(let s=0;s<n;s++) updateDial(tr,s); }
   refreshSub(tr); save();
 }
 /* 随机鼓律动：从当前风格的推荐预设里挑一条骨架（按小节平铺），再做随机加花 / 删减 */
 function randomizeDrum(tr){
   if(tr.kind!=='drum') return;
+  pushUndo();
   const n=stepsOf(tr), nb=barsOf(tr);
   const cands=styleDrums().filter(x=>x!=='none');
   const id=cands.length?pick(cands):'pop';

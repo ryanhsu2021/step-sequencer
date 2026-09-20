@@ -179,7 +179,7 @@ function renderChord(){
   const hint=document.createElement('div'); hint.className='cc-hint';
   hint.innerHTML='每个方块的宽度＝它持续的拍数，<b>点方块</b>挑和弦（级数表里点一下即可替换并试听），'+
     '<b>‹ ›</b> 改拍长、<b>⧉</b> 拆分插入、<b>✕</b> 删除；方块的「第几拍」就是它覆盖的范围。'+
-    '各声部（鼓除外）卡片上的 <b>♻ 跟随和弦 / ◌ 独立和声</b> 决定它是否照这条进行生成。';
+    '各声部（鼓除外）卡片上的 <b>⟳ 吸附和弦</b> 可把现有音符一次性对齐到这条进行。';
   box.appendChild(hint);
 }
 /* 选择和弦的面板 */
@@ -236,12 +236,14 @@ function buildPicker(){
 /* ---- 和弦段编辑操作 ---- */
 function setSegChord(i,root,seventh){
   const p=fitProg(), c=p[i]; if(!c) return;
+  pushUndo();
   p[i]=mkChord(root,c.beats,seventh===undefined?c.seventh:seventh);
   state.progEdited=true; save(); audChord(p[i]);
 }
 function splitSeg(i){
   const p=fitProg(), c=p[i]; if(!c) return;
   if(c.beats<2){ toast('这段只有 1 拍——先按 › 把它加长，再拆分'); return; }
+  pushUndo();
   const a=Math.floor(c.beats/2), b=c.beats-a;
   p.splice(i,1,mkChord(c.root,a,c.seventh),mkChord(c.root,b,c.seventh));
   state.progEdited=true; chordEdit=i+1;
@@ -252,6 +254,7 @@ function segLen(i,d){
   const p=fitProg(), c=p[i]; if(!c) return;
   const nb=p[i+1]||p[i-1];
   if(!nb){ toast('整曲只有这一个和弦'); return; }
+  pushUndo();
   if(d>0){ if(nb.beats<2){ toast('相邻的和弦只剩 1 拍，给不出更多'); return; } c.beats++; nb.beats--; }
   else{ if(c.beats<2){ toast('最短 1 拍'); return; } c.beats--; nb.beats++; }
   state.progEdited=true; renderChord(); save();
@@ -259,6 +262,7 @@ function segLen(i,d){
 function delSeg(i){
   const p=fitProg();
   if(p.length<2){ toast('至少保留一个和弦'); return; }
+  pushUndo();
   const c=p[i], nb=p[i+1]||p[i-1];
   nb.beats+=c.beats; p.splice(i,1);
   if(chordEdit!=null) chordEdit=chordEdit>=p.length?null:chordEdit;
@@ -285,7 +289,7 @@ function buildCard(tr,i){
       '<button class="icon-btn" data-act="up" title="上移一位">↑</button>'+
       '<button class="icon-btn" data-act="down" title="下移一位">↓</button>'+
       (tr.kind==='inst'
-        ?'<button class="icon-btn" data-act="opt" title="按当前风格优化本声部旋律">✨</button>'+
+        ?'<button class="icon-btn" data-act="opt" title="✨ 和声重排：按当前风格 + 和弦进行轨约束重排本声部">✨</button>'+
          '<button class="icon-btn" data-act="rand" title="按当前风格随机生成一条全新旋律">🎲</button>'
         :'<button class="icon-btn" data-act="rand" title="按当前风格随机生成一条律动">🎲</button>')+
       '<button class="icon-btn'+(tr.mute?' off':'')+'" data-act="mute" title="静音">M</button>'+
@@ -345,12 +349,12 @@ function buildCard(tr,i){
     const fol=document.createElement('button');
     fol.type='button';
     fol.className='chip btn-like';
-    fol.textContent='⟳ 对齐和弦';
-    fol.title='把本声部现有音符一次性吸附到最近的和弦音（和弦外的音就近挪进和弦内）';
+    fol.textContent='⟳ 吸附和弦 Snap';
+    fol.title='把本声部现有音符一次性吸附（Snap）到最近的和弦音（和弦外的音就近挪进和弦内）';
     fol.addEventListener('click',()=>{
       const changed=reharmonizeTrack(tr);
       save();
-      toast(changed?('「'+tr.name+'」已对齐到和弦进行轨（音高已吸附）'):('「'+tr.name+'」的音符都已落在和弦内，无需对齐'));
+      toast(changed?('「'+tr.name+'」已吸附到和弦进行轨（音高对齐）'):('「'+tr.name+'」的音符都已落在和弦内，无需吸附'));
     });
     const sel=document.createElement('select'); fillInstSelect(sel,tr.inst);
     sel.addEventListener('change',()=>{tr.inst=sel.value;refreshSub(tr);save();});
@@ -406,7 +410,7 @@ function buildStepRow(tr,card){
       const mk=document.createElement('div'); mk.className='mark'; ring.appendChild(mk);
       const cap=document.createElement('div'); cap.className='cap'; cap.textContent='—';
       d.append(ring,cap); slot.appendChild(d); row.appendChild(slot);
-      card.knobs[s]={dial:d,ring,cap};
+      card.knobs[s]={dial:d,ring,cap,mark:mk};
       attachDialEvents(d,tr,s);
       updateDial(tr,s);
     }
@@ -492,10 +496,15 @@ function updateDial(tr,s){
   const card=view.cards.get(tr.id); if(!card||!card.knobs[s]) return;
   const p=posOf(tr,s), r=tr.seq[s];
   if(r!==-1) tr.last[s]=r;
+  const v=velOf(tr,s);
   card.knobs[s].ring.style.transform=`rotate(${-p*360/9}deg)`;
   card.knobs[s].cap.textContent=r===-1?'—':noteName(rowMidi(r,tr.oct));
+  card.knobs[s].mark.style.opacity=(r===-1||v==null)?1:(.35+.65*v);   // 手动调过力度：越强越实
   card.knobs[s].dial.classList.toggle('on',r!==-1);
   card.knobs[s].dial.setAttribute('aria-valuenow',String(p));
+  card.knobs[s].dial.title=r===-1
+    ?('第 '+(s+1)+' 步 · 空（点击 / 拖拽摆放音符）')
+    :('第 '+(s+1)+' 步 · '+noteName(rowMidi(r,tr.oct))+'（第 '+(degOfRow(r)+1)+' 级）· 力度 '+(v==null?'默认 82':Math.round(v*100))+'%（滚轮调力度）');
 }
 
 /* ---- 播放头（所有卡片按各自小节数循环同步） ---- */
