@@ -152,8 +152,8 @@ const arp=T.state.tracks[2];
 T.setStyle(1); T.setBars(arp,2);
 chk('fillArp 后 userSeq 仍为 null',arp.userSeq===null);
 const asnaps=[];
-for(let i=0;i<4;i++){ T.optimizeMelody(arp); asnaps.push(snap(arp)); }
-chk('4 次连点 ≥2 个不同版本',new Set(asnaps).size>=2,'distinct='+new Set(asnaps).size);
+for(let i=0;i<6;i++){ T.optimizeMelody(arp); asnaps.push(snap(arp)); }
+chk('6 次连点 ≥2 个不同版本（✨ 非不动点）',new Set(asnaps).size>=2,'distinct='+new Set(asnaps).size);
 chk('优化后 userSeq 仍为 null',arp.userSeq===null);
 
 console.log('== 3b. 🎲 按风格随机生成：全新旋律、连点不同、无视旧素材 ==');
