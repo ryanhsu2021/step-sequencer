@@ -306,18 +306,28 @@ chk('存档含 progBars / chordVol',sv8.progBars===1&&typeof sv8.chordVol==='num
 T.loadSaved();
 chk('读回：progBars 还原为 1',T.progBeats()===4);
 
-console.log('== 9. 🎲 随机同风格：保持当前小节数 ==');
+console.log('== 9. 🎲 随机同风格：和弦个数与拍数不变，只换级数 ==');
 T.setProgBars(3);
+T.state.prog=[{root:0,beats:4,seventh:false},{root:3,beats:4,seventh:false},{root:4,beats:4,seventh:false}];
+T.fitProg();                                      // 3 个和弦各 4 拍
+const shape9=()=>T.state.prog.map(c=>c.beats).join(',');
+const count9=T.state.prog.length, shape9s=shape9();
+const degSeen=new Set();
 let ok9=true, why9='';
-for(let i=0;i<12;i++){
+for(let i=0;i<16;i++){
   try{
     T.randomSameStyle();
-    if(T.progBeats()!==12){ ok9=false; why9='第'+(i+1)+'次小节数被改变'; break; }
-    if(T.state.prog.reduce((a,c)=>a+c.beats,0)!==12){ ok9=false; why9='第'+(i+1)+'次总拍数不对'; break; }
+    const p=T.state.prog;
+    if(p.length!==count9){ ok9=false; why9='第'+(i+1)+'次和弦个数被改变'; break; }
+    if(p.map(c=>c.beats).join(',')!==shape9s){ ok9=false; why9='第'+(i+1)+'次各和弦拍数被改变'; break; }
+    if(p.reduce((a,c)=>a+c.beats,0)!==12){ ok9=false; why9='第'+(i+1)+'次总拍数不对'; break; }
+    if(p.some(c=>!Array.isArray(c.tones)||c.tones.length<3)){ ok9=false; why9='第'+(i+1)+'次和弦 tones 非法'; break; }
+    p.forEach(c=>degSeen.add(c.root));
     if(T.state.progEdited!==false){ ok9=false; why9='随机后不应标记为手动'; break; }
   }catch(e){ ok9=false; why9='抛异常: '+e.message; break; }
 }
-chk('连点 12 次：小节数始终为 3（12 拍）且和弦铺满',ok9,why9);
+chk('连点 16 次：和弦个数（'+count9+'）与各拍数 ['+shape9s+'] 始终不变',ok9,why9);
+chk('连点 16 次：级数确实在换（覆盖 ≥3 种）',degSeen.size>=3,'seen='+[...degSeen].sort((a,b)=>a-b).join(','));
 T.setProgBars(1);
 chk('手动改回 1 小节立即生效',T.progBeats()===4);
 

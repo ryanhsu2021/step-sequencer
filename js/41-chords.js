@@ -78,9 +78,19 @@ function progFor(){
   return state.prog;
 }
 const ensureProg=()=>{ fitProg(); return state.prog; };
-/* 🎲 随机同风格：只换和弦内容，小节数保持当前值不动 */
+/* 🎲 随机同风格：和弦个数与每个和弦的拍数【原样保留】，只重新随机每个和弦的级数——
+   级数从当前风格进行库（PLAN_LIB）里出现过的级数池抽取；首尾偏向主和弦、避免与原和弦相同 */
 function randomSameStyle(){
-  setProg(randomProgression(),false);                // randomProgression 按当前 progBeats 铺满
+  const cur=fitProg(), L=scLen();
+  const pool=[...new Set(PLAN_LIB().flat().map(d=>(((d|0)%L)+L)%L))];
+  if(!pool.length) pool.push(0);
+  const next=cur.map((c,i)=>{
+    let d;
+    if((i===0||i===cur.length-1)&&Math.random()<.6) d=0;          // 开头 / 结尾多半落回主和弦
+    else for(let t=0;t<8;t++){ d=pick(pool); if(d!==c.root||pool.length<2) break; }
+    return mkChord(d==null?c.root:d,c.beats,!!SP_.seventh);
+  });
+  setProg(next,false);                               // 总拍数不变 → fitProg 不会改动分段
   return progBars();
 }
 /* 改和弦轨自己的小节数（1–8），与声部小节数无关 */
