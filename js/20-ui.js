@@ -64,6 +64,7 @@ function renderTracks(){
   const stack=$('trackStack');
   stack.innerHTML=''; view.cards.clear();
   state.tracks.forEach((tr,i)=>stack.appendChild(buildCard(tr,i)));
+  relayoutSteps();                               // 渲染完量一次行宽，决定 16 / 8 / 4 步一行
 }
 
 /* ---- 和弦进行轨：每段都能自由编辑（换和弦 / 改拍长 / 拆分 / 删除） ---- */
@@ -371,9 +372,9 @@ function buildCard(tr,i){
 
   /* ---- 步进区 ---- */
   if(tr.kind==='inst'){
-    el.appendChild(buildStepRow(tr,card));
+    card.stepArea=buildStepRow(tr,card); el.appendChild(card.stepArea);
   }else{
-    el.appendChild(buildDrumGrid(tr,card));
+    card.stepArea=buildDrumGrid(tr,card); el.appendChild(card.stepArea);
     const note=document.createElement('div'); note.className='dnote';
     note.textContent='点击格子即可编辑每条音色；上面的预设只是起点，套用后仍可自由修改。';
     el.appendChild(note);
@@ -386,37 +387,48 @@ function refreshSub(tr){
   const sub=card.el.querySelector('.tc-sub'); if(sub) sub.textContent=trackDesc(tr);
 }
 
-/* ---- 旋律声部：每小节一行 16 旋钮（可 1–4 小节） ---- */
+/* ---- 旋律声部：每小节若干行旋钮（宽度不够时把 16 步拆成 8 / 4 步一行，无需横向滚动） ---- */
+let stepLine=BAR, drumLine=BAR;                   // 每行放多少步（自适应结果）
+const CHUNKS=(n,per)=>{const o=[];for(let i=0;i<n;i+=per)o.push([i,Math.min(i+per,n)]);return o;};
 function buildStepRow(tr,card){
   const wrap=document.createElement('div'); wrap.className='stepwrap';
+  drawStepRow(tr,card,wrap,stepLine);
+  return wrap;
+}
+function drawStepRow(tr,card,wrap,per){
+  wrap.innerHTML=''; wrap.classList.toggle('multiline',per<BAR);
+  card.knobs=[]; card.nums=[];
   const nb=barsOf(tr);
   for(let b=0;b<nb;b++){
     const line=document.createElement('div'); line.className='barrow';
     const tag=document.createElement('div'); tag.className='barnum'; tag.textContent=b+1;
     tag.title='第 '+(b+1)+' 小节（步 '+(b*BAR+1)+'–'+((b+1)*BAR)+'）';
     const body=document.createElement('div'); body.className='barbody';
-    const nums=document.createElement('div'); nums.className='stepnums';
-    const row=document.createElement('div'); row.className='steprow';
-    for(let k=0;k<BAR;k++){
-      const s=b*BAR+k, gap=STEP_GAP(k);
-      const n=document.createElement('div');
-      n.className='stepnum'+(gap?' gap':''); n.textContent=k+1;
-      nums.appendChild(n); card.nums[s]=n;
-      const slot=document.createElement('div'); slot.className='slot'+(gap?' gap':'');
-      const d=document.createElement('div');
-      d.className='dial'; d.tabIndex=0; d.setAttribute('role','slider');
-      d.setAttribute('aria-label','第'+(b+1)+'小节第'+(k+1)+'步音高');
-      const ring=document.createElement('div'); ring.className='ring';
-      const mk=document.createElement('div'); mk.className='mark'; ring.appendChild(mk);
-      const cap=document.createElement('div'); cap.className='cap'; cap.textContent='—';
-      d.append(ring,cap); slot.appendChild(d); row.appendChild(slot);
-      card.knobs[s]={dial:d,ring,cap,mark:mk};
-      attachDialEvents(d,tr,s);
-      updateDial(tr,s);
+    for(const [a,e] of CHUNKS(BAR,per)){         // 一小节按 per 步拆成若干行
+      const seg=document.createElement('div'); seg.className='stline';
+      const nums=document.createElement('div'); nums.className='stepnums';
+      const row=document.createElement('div'); row.className='steprow';
+      for(let k=a;k<e;k++){
+        const s=b*BAR+k, gap=STEP_GAP(k)&&k>a;   // 行首不留分组缩进
+        const n=document.createElement('div');
+        n.className='stepnum'+(gap?' gap':''); n.textContent=k+1;
+        nums.appendChild(n); card.nums[s]=n;
+        const slot=document.createElement('div'); slot.className='slot'+(gap?' gap':'');
+        const d=document.createElement('div');
+        d.className='dial'; d.tabIndex=0; d.setAttribute('role','slider');
+        d.setAttribute('aria-label','第'+(b+1)+'小节第'+(k+1)+'步音高');
+        const ring=document.createElement('div'); ring.className='ring';
+        const mk=document.createElement('div'); mk.className='mark'; ring.appendChild(mk);
+        const cap=document.createElement('div'); cap.className='cap'; cap.textContent='—';
+        d.append(ring,cap); slot.appendChild(d); row.appendChild(slot);
+        card.knobs[s]={dial:d,ring,cap,mark:mk};
+        attachDialEvents(d,tr,s);
+        updateDial(tr,s);
+      }
+      seg.append(nums,row); body.appendChild(seg);
     }
-    body.append(nums,row); line.append(tag,body); wrap.appendChild(line);
+    line.append(tag,body); wrap.appendChild(line);
   }
-  return wrap;
 }
 
 /* ---- 鼓声部：7 lane × (16 步 × 小节数) 自由编辑 ---- */
@@ -430,6 +442,17 @@ function setLaneCell(tr,id,s,val){
 }
 function buildDrumGrid(tr,card){
   const wrap=document.createElement('div'); wrap.className='dgrid';
+  drawDrumGrid(tr,card,wrap,drumLine);
+  return wrap;
+}
+function drawDrumGrid(tr,card,wrap,per){
+  wrap.innerHTML=''; card.dc.clear();
+  if(per>=BAR) drawDrumLegacy(tr,card,wrap);      // 宽屏：每 lane 一行，可横向并排多小节（原样）
+  else drawDrumRows(tr,card,wrap,per);            // 窄屏：按「小节 × 每行 per 步」分块铺开
+  refreshDrumCells(tr);
+}
+/* 宽屏布局：7 lane × (16 步 × 小节数)，整行横向滚动 */
+function drawDrumLegacy(tr,card,wrap){
   const nb=barsOf(tr);
   if(nb>1){                                     // 小节表头（多小节时）
     const h=document.createElement('div'); h.className='dl dhrow';
@@ -452,16 +475,7 @@ function buildDrumGrid(tr,card){
       const grp=document.createElement('div'); grp.className='dcells';
       for(let k=0;k<BAR;k++){
         const s=b*BAR+k;
-        const cell=document.createElement('div');
-        cell.className='dcell'+(STEP_GAP(k)?' gap':'');
-        cell.title='第 '+(b+1)+' 小节第 '+(k+1)+' 步';
-        cell.addEventListener('click',()=>{
-          const val=getLane(tr,lane.id)[s]!=='x';
-          setLaneCell(tr,lane.id,s,val);
-          cell.classList.toggle('on',val);
-          tr.drum='custom'; refreshSub(tr); save();
-          if(val){ ensureAudio(); if(audioCtx.state!=='running') audioCtx.resume(); playDrumHit(tr,lane.id,audioCtx.currentTime+.02); }
-        });
+        const cell=makeDrumCell(tr,lane,s,b,k,STEP_GAP(k));
         grp.appendChild(cell); cells[s]=cell;
       }
       hall.appendChild(grp);
@@ -469,8 +483,51 @@ function buildDrumGrid(tr,card){
     card.dc.set(lane.id,cells);
     l.append(nm,hall); wrap.appendChild(l);
   }
-  refreshDrumCells(tr);
-  return wrap;
+}
+/* 窄屏布局：每块 = 一行「步 a–b」表头 + 7 条 lane，块与块纵向排开，不横向滚动 */
+function drawDrumRows(tr,card,wrap,per){
+  const nb=barsOf(tr);
+  for(let b=0;b<nb;b++){
+    for(const [a,e] of CHUNKS(BAR,per)){
+      const block=document.createElement('div'); block.className='dlblock';
+      const h=document.createElement('div'); h.className='dl dhrow';
+      const hn=document.createElement('div'); hn.className='dlname';
+      const hs=document.createElement('div'); hs.className='dcells-all';
+      const hg=document.createElement('div'); hg.className='dcells';
+      const lb=document.createElement('div'); lb.className='dcbar';
+      lb.textContent=(nb>1?'第 '+(b+1)+' 小节 · ':'')+'步 '+(b*BAR+a+1)+'–'+(b*BAR+e);
+      hg.appendChild(lb); hs.appendChild(hg); h.append(hn,hs); block.appendChild(h);
+      for(const lane of DRUM_LANES){
+        const l=document.createElement('div'); l.className='dl';
+        const nm=document.createElement('div'); nm.className='dlname'; nm.textContent=lane.label;
+        const hall=document.createElement('div'); hall.className='dcells-all';
+        const grp=document.createElement('div'); grp.className='dcells';
+        let cells=card.dc.get(lane.id);
+        if(!cells){ cells=[]; card.dc.set(lane.id,cells); }
+        for(let k=a;k<e;k++){
+          const s=b*BAR+k;
+          const cell=makeDrumCell(tr,lane,s,b,k,STEP_GAP(k)&&k>a);
+          grp.appendChild(cell); cells[s]=cell;
+        }
+        hall.appendChild(grp); l.append(nm,hall); block.appendChild(l);
+      }
+      wrap.appendChild(block);
+    }
+  }
+}
+/* 单个鼓格：点击开 / 关并试听 */
+function makeDrumCell(tr,lane,s,b,k,gap){
+  const cell=document.createElement('div');
+  cell.className='dcell'+(gap?' gap':'');
+  cell.title='第 '+(b+1)+' 小节第 '+(k+1)+' 步';
+  cell.addEventListener('click',()=>{
+    const val=getLane(tr,lane.id)[s]!=='x';
+    setLaneCell(tr,lane.id,s,val);
+    cell.classList.toggle('on',val);
+    tr.drum='custom'; refreshSub(tr); save();
+    if(val){ ensureAudio(); if(audioCtx.state!=='running') audioCtx.resume(); playDrumHit(tr,lane.id,audioCtx.currentTime+.02); }
+  });
+  return cell;
 }
 function refreshDrumCells(tr){
   const card=view.cards.get(tr.id); if(!card||card.kind!=='drum') return;
@@ -527,3 +584,38 @@ function paintHead(step){
   view.csegs.forEach((el,i)=>{ if(el) el.classList.toggle('ph',i===cur); });
   lastHead=step;
 }
+
+/* ---- 自适应分行：宽度不够就把一小节的 16 步拆成 8 / 4 步一行（免横向滚动） ---- */
+function redrawStepAreas(per){
+  for(const tr of state.tracks){
+    const card=view.cards.get(tr.id);
+    if(card&&card.kind==='inst'&&card.stepArea) drawStepRow(tr,card,card.stepArea,per);
+  }
+}
+function redrawDrumAreas(per){
+  for(const tr of state.tracks){
+    const card=view.cards.get(tr.id);
+    if(card&&card.kind==='drum'&&card.stepArea) drawDrumGrid(tr,card,card.stepArea,per);
+  }
+}
+function relayoutSteps(){
+  const first=()=>document.querySelector('.stepwrap');
+  if(first()){                                   // 旋律旋钮行：按实测行宽 16 → 8 → 4 逐档试
+    let cur=stepLine;
+    if(cur!==BAR){ redrawStepAreas(BAR); cur=BAR; }
+    for(const per of [BAR,BAR/2,BAR/4]){
+      if(per<cur){ redrawStepAreas(per); cur=per; }
+      const w=first();
+      if(!w||w.scrollWidth<=w.clientWidth+2) break;
+    }
+    stepLine=cur;
+  }
+  const narrow=(typeof window!=='undefined')&&window.innerWidth<=760;
+  const want=narrow?BAR/2:BAR;                   // 鼓格：窄屏每行 8 步
+  if(want!==drumLine){ redrawDrumAreas(want); drumLine=want; }
+}
+let rzTimer=0;
+window.addEventListener('resize',()=>{           // 转屏 / 改窗口大小后重新分行
+  if(rzTimer) clearTimeout(rzTimer);
+  rzTimer=setTimeout(relayoutSteps,160);
+});

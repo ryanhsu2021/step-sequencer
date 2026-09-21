@@ -215,6 +215,13 @@ input[type=range]:hover::-webkit-slider-thumb{transform:scale(1.15)}
 .stepwrap{overflow-x:auto;padding:2px 2px 6px;scrollbar-width:thin;scrollbar-color:#cfccc3 transparent}
 .stepwrap::-webkit-scrollbar{height:5px}
 .stepwrap::-webkit-scrollbar-thumb{background:#cfccc3;border-radius:4px}
+/* 分行模式（窄屏自适应）：一行的步数从 16 降到 8 / 4，彻底免去横向滚动 */
+.stline+.stline{margin-top:10px}
+.stepwrap.multiline{overflow-x:visible;padding-bottom:0}
+.stepwrap.multiline .barrow+.barrow{margin-top:12px}
+.dlblock+.dlblock{margin-top:12px}
+.dlblock .dhrow{margin-bottom:3px}
+.dlblock .dcells-all{overflow-x:visible}
 .dcells-all{scrollbar-width:thin;scrollbar-color:#cfccc3 transparent}
 .dcells-all::-webkit-scrollbar{height:5px}
 .barrow{display:flex;align-items:flex-start;gap:11px}
