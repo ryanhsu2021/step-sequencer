@@ -112,7 +112,8 @@ const expose=`
   velOf,pushUndo,undo,undoDepth:()=>undoStack.length,
   DELAY_PRESETS,REV_PRESETS,setTrackFx,setReverb,revGetter:()=>revPreset,trackFx:t=>t.fx,setRevMix:v=>{revMix=v;},getRevMix:()=>revMix,
   setChordFx,applyChordFx,chordFxGetter:()=>chordFx,getChordFxMix:()=>chordFxMix,setChordFxMix:v=>{chordFxMix=v;},chordBusId:CHORD_BUS_ID,
-  planToChords,setProgPlan,progKeyOf,planRoman,modeIdx:()=>modeIdx,PLAN_LIB,PROG_PLANS,STYLE,ROMAN};`;
+  planToChords,setProgPlan,progKeyOf,planRoman,modeIdx:()=>modeIdx,PLAN_LIB,PROG_PLANS,STYLE,ROMAN,
+  rateOf,rateName,spanOf,setRate,loopSteps,RATE_VALUES};`;
 try{ vm.runInContext(js+expose,sandbox); }catch(e){ console.log('LOAD_FAIL:',e.stack); process.exit(1); }
 const T=sandbox.__T;
 let pass=0,fail=0;
@@ -537,6 +538,79 @@ chk('全部调式预设都能铺满和弦轨',planOK,planDetail);
 
 const edge=T.planToChords([0,1,2,3]);
 chk('和弦数＝拍数：每个正好 1 拍',edge.length===4&&edge.every(c=>c.beats===1));
+
+console.log('== 16. 每声部速度（每步时值）1/16 · 1/8 · 1/4 ==');
+const trs=T.state.tracks[0];
+chk('默认速度 1/16（rate=1）',T.rateOf(trs)===1&&T.rateName(1)==='1/16');
+{ const keep=trs.rate; trs.rate=99; chk('非法 rate 回落 1/16',T.rateOf(trs)===1); trs.rate=keep||1; }
+chk('三档都能命名（1/16 · 1/8 · 1/4）',T.RATE_VALUES.join(',')==='1,2,4'&&T.rateName(2)==='1/8'&&T.rateName(4)==='1/4');
+
+T.setBars(trs,1);
+const seqLen=trs.seq.length;
+chk('spanOf：1/16 → 一小节 16 个基准步',T.spanOf(trs)===16);
+T.setRate(trs,2);
+chk('setRate 1/8：生效 + spanOf 32 步（16 步走 2 小节）',T.rateOf(trs)===2&&T.spanOf(trs)===32);
+chk('全曲循环长度跟着变长（≥32）',T.loopSteps()>=32,'loop='+T.loopSteps());
+T.setRate(trs,4);
+chk('setRate 1/4：spanOf 64 步 + 循环长度 ≥64',T.spanOf(trs)===64&&T.loopSteps()>=64,'loop='+T.loopSteps());
+chk('速度不影响音序内容（seq 长度 / 小节数不变）',trs.seq.length===seqLen&&T.barsOf(trs)===1);
+T.setRate(trs,7);
+chk('setRate 传非法值 → 回落 1/16',T.rateOf(trs)===1);
+
+T.setRate(trs,2);
+T.save();
+let dRate=null; try{ dRate=JSON.parse(store['polyseq.v7']); }catch(e){}
+chk('存档含 rate',!!(dRate&&dRate.tracks&&dRate.tracks[0]&&dRate.tracks[0].rate===2),
+    dRate&&dRate.tracks&&('rate='+dRate.tracks[0].rate));
+T.loadSaved();
+chk('读回：rate 还原为 1/8',T.rateOf(T.state.tracks[0])===2);
+{ const o=JSON.parse(store['polyseq.v7']); o.tracks.forEach(t=>delete t.rate);
+  store['polyseq.v7']=JSON.stringify(o); }
+T.loadSaved();
+chk('旧档（无 rate 字段）读取安全 → 1/16',T.rateOf(T.state.tracks[0])===1);
+T.setRate(T.state.tracks[0],4);
+T.setRate(T.state.tracks[0],2);
+T.undo();
+chk('撤销可回退速度档位（1/8 撤销回 1/4，说明快照带 rate）',T.rateOf(T.state.tracks[0])===4,'rate='+T.rateOf(T.state.tracks[0]));
+
+/* MIDI：每步 tick 随速度成倍（PPQ 960 → 1/16 = 240 tick/步） */
+function midiTrackOnTicks(u8){
+  const tracks=[];
+  let p=0;
+  while(p+8<=u8.length){
+    if(u8[p]===0x4D&&u8[p+1]===0x54&&u8[p+2]===0x72&&u8[p+3]===0x6B){
+      const len=(u8[p+4]<<24)|(u8[p+5]<<16)|(u8[p+6]<<8)|u8[p+7];
+      const end=p+8+len; let q=p+8, t=0, run=0; const on=[];
+      while(q<end){
+        let d=0,c; do{ c=u8[q++]; d=(d<<7)|(c&0x7f); }while(c&0x80);
+        t+=d;
+        let st=u8[q];
+        if(st<0x80){ st=run; } else { q++; run=st; }
+        const hi=st&0xf0;
+        if(hi===0x90){ const vel=u8[q+1]; if(vel>0) on.push(t); q+=2; }
+        else if(hi===0x80||hi===0xa0||hi===0xb0||hi===0xe0){ q+=2; }
+        else if(hi===0xc0||hi===0xd0){ q+=1; }
+        else if(st===0xFF){ q++; let l=0,c2; do{ c2=u8[q++]; l=(l<<7)|(c2&0x7f); }while(c2&0x80); q+=l; }
+        else if(st===0xF0||st===0xF7){ let l=0,c2; do{ c2=u8[q++]; l=(l<<7)|(c2&0x7f); }while(c2&0x80); q+=l; }
+        else break;
+      }
+      tracks.push(on); p=end;
+    } else p++;
+  }
+  return tracks;
+}
+const trM=T.state.tracks[0];
+const latestMidi=()=>{ const b=globalThis.__blobs||[]; const parts=b[b.length-1]||[]; return parts.find(x=>x&&x.length>200)||null; };
+T.setRate(trM,1); T.resetSeq(trM); T.setStep(trM,8,4,false);
+T.exportMidi();
+const t1=midiTrackOnTicks(latestMidi()||[]);
+T.setRate(trM,2);
+T.exportMidi();
+const t2=midiTrackOnTicks(latestMidi()||[]);
+const on1=(t1[1]&&t1[1][0])||-1, on2=(t2[1]&&t2[1][0])||-1;
+chk('MIDI 每步 tick：1/16 → 8 步 = 1920 tick（PPQ960）',on1===1920,'on1='+on1);
+chk('MIDI 每步 tick：1/8 → 同样 8 步 = 3840 tick（成倍）',on2===3840,'on2='+on2);
+T.setRate(trM,1);
 
 console.log('\n=== '+(fail?fail+' 项失败':'全部通过')+'（'+pass+' 通过 / '+fail+' 失败）===');
 process.exit(fail?1:0);

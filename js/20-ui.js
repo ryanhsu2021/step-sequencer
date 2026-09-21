@@ -17,7 +17,7 @@ function fillInstSelect(sel,cur){
   sel.value=cur;
 }
 function trackDesc(tr){
-  const barTxt=barsOf(tr)+' 小节 · '+stepsOf(tr)+' 步';
+  const barTxt=barsOf(tr)+' 小节 · '+stepsOf(tr)+' 步 · 速度 '+rateName(rateOf(tr));
   if(tr.kind==='drum'){
     const hits=DRUM_LANES.reduce((a,l)=>a+((tr.p[l.id]||'').match(/x/g)||[]).length,0);
     return '鼓机 · '+barTxt+' · '+(tr.drum&&tr.drum!=='custom'?PRESET_BY_ID(tr.drum).name+'·已可修改':'自定义')
@@ -25,6 +25,23 @@ function trackDesc(tr){
   }
   const lo=noteName(rowMidi(ROWS-1,tr.oct)), hi=noteName(rowMidi(0,tr.oct));
   return INST_NAME(tr.inst)+' · '+barTxt+(tr.oct?' · '+(tr.oct>0?'+':'')+tr.oct+'八度':'')+' · '+lo+'–'+hi;
+}
+/* 每声部速度（每步时值）：1/16 默认 · 1/8 慢一倍 · 1/4 慢三倍（旋律与鼓都有） */
+function chipRate(tr){
+  const cur=rateOf(tr);
+  const l=document.createElement('span'); l.className='chip seg';
+  const t=document.createElement('span'); t.textContent='速度';
+  l.appendChild(t);
+  RATE_VALUES.forEach(v=>{
+    const b=document.createElement('button');
+    b.type='button'; b.className='seg-b'+(v===cur?' on':'');
+    b.textContent=rateName(v);
+    b.title='每步＝'+rateName(v)+'音符'+
+      (v===1?'（默认，与其它声部同速）':v===2?'（本声部慢一倍：16 步走 2 小节）':'（本声部慢三倍：16 步走 4 小节）');
+    b.addEventListener('click',()=>{ if(v!==cur) setRate(tr,v); });
+    l.appendChild(b);
+  });
+  return l;
 }
 /* 每声部延时效果下拉（旋律与鼓声部共用） */
 function chipFx(tr){
@@ -383,6 +400,7 @@ function buildCard(tr,i){
   /* ---- 参数行 ---- */
   const meta=document.createElement('div'); meta.className='tc-meta';
   meta.appendChild(chipSeg('小节',[1,2,3,4,8],barsOf(tr),n=>setBars(tr,n)));
+  meta.appendChild(chipRate(tr));
   if(tr.kind==='drum'){
     const want=(SP_.drums||[]);
     let alt=0;
@@ -638,7 +656,7 @@ function paintHead(step){
   if(step===lastHead) return;
   for(const tr of state.tracks){
     const card=view.cards.get(tr.id); if(!card) continue;
-    const n=stepsOf(tr), s=step<0?-1:step%n;
+    const n=stepsOf(tr), rt=rateOf(tr), s=step<0?-1:Math.floor(step/rt)%n;   // 速度慢的声部：播放头走得也慢
     if(card.kind==='inst'){
       for(let i=0;i<n;i++){
         const on=i===s;

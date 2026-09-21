@@ -294,7 +294,7 @@ function playTrackNote(tr,row,t,vel){
   const freq=440*Math.pow(2,(rowMidi(row,tr.oct)-69)/12);
   /* 手动力度优先；未手动调过的步保留 ±随机人性化 */
   const v=(vel==null?.82+Math.random()*.16:vel*(.94+Math.random()*.12));
-  (VOICE[tr.inst]||VOICE.piano)(freq,t,dest,v,stepDur()*1.9);
+  (VOICE[tr.inst]||VOICE.piano)(freq,t,dest,v,stepDur()*rateOf(tr)*1.9);   // 发音长度随该声部速度缩放
   sendMidiNote(tr,row,t,vel);
 }
 /* ============ 鼓机合成 ============ */

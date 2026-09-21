@@ -49,8 +49,9 @@ const GM_PROG={piano:0,epiano:4,organ:19,pluck:46,guitar:24,bell:14,marimba:12,s
   musicbox:10,vibes:11,koto:107,choir:52,flute:73,brass:62,chip:80,acid:38};
 function midiTrackChunk(events,name,program,channel){
   const body=[]; let last=0;
+  const nm=ascii(name);                     // 非 ASCII 声部名会回退成「Track」，长度必须按实际写入的字节算
   const push=(tick,...bytes)=>{ body.push(...vlq(tick-last),...bytes); last=tick; };
-  push(0,0xFF,0x03,name.length,...ascii(name));
+  push(0,0xFF,0x03,nm.length,...nm);
   if(program!=null) push(0,0xC0|channel,program);
   events.sort((a,b)=>a.tick-b.tick||a.seq-b.seq);
   for(const ev of events) push(ev.tick,...ev.bytes);
@@ -58,11 +59,11 @@ function midiTrackChunk(events,name,program,channel){
   return body;
 }
 function exportMidi(){
-  const PPQ=960, stepT=PPQ/4;
+  const PPQ=960;
   let any=false;
   const chunks=[];
   for(const tr of state.tracks){
-    const ev=[], ch=midiChan(tr), n=stepsOf(tr);
+    const ev=[], ch=midiChan(tr), n=stepsOf(tr), stepT=(PPQ/4)*rateOf(tr);   // 每步时值随该声部速度缩放
     if(tr.kind==='inst'){
       for(let s=0;s<n;s++){
         if(tr.seq[s]===-1) continue;

@@ -8,7 +8,7 @@ let tid=0;
 function makeTrack(kind,name,inst,oct){
   const t={
     id:++tid, kind:kind||'inst', name:name||('声部 '+tid),
-    inst:inst||'piano', oct:oct||0, bars:1,
+    inst:inst||'piano', oct:oct||0, bars:1, rate:1,
     seq:[], last:[], userSeq:null, vel:null,
     vol:.85, pan:0, mute:false, solo:false, fx:'off', fxMix:1,
     color:TRACK_COLORS[0], p:{},
@@ -66,6 +66,17 @@ function setBars(tr,n){
 }
 const state={tracks:[],prog:[],progEdited:false,progBars:1};
 const soloActive=()=>state.tracks.some(t=>t.solo);
+/* 每声部速度（每步时值）：1/16 默认 · 1/8 慢一倍 · 1/4 慢三倍。
+   只改本声部的播放速率与发音长度，音序内容与小节数都不变；全曲循环长度会取所有声部中最长的那个 */
+function setRate(tr,v){
+  v=RATE_VALUES.indexOf(v|0)>=0?(v|0):1;
+  if(v===rateOf(tr)) return;
+  pushUndo();
+  tr.rate=v;
+  renderTracks(); save();
+  toast('「'+tr.name+'」速度 → '+rateName(v)+
+    (v===1?'（每步 1/16，与其它声部同速）':v===2?'（每步 1/8，本声部慢一倍：16 步走 2 小节）':'（每步 1/4，本声部慢三倍：16 步走 4 小节）'));
+}
 
 /* ---- 声部增删 ---- */
 function addTrack(kind,opts){
@@ -115,7 +126,7 @@ function save(){
         progEdited:!!state.progEdited,
         chordVol:chordVol,
         chordFx:chordFx||'off',chordFxMix:chordFxMix==null?1:chordFxMix,
-        tracks:state.tracks.map(t=>({kind:t.kind,name:t.name,inst:t.inst,oct:t.oct,bars:barsOf(t),seq:t.seq,
+        tracks:state.tracks.map(t=>({kind:t.kind,name:t.name,inst:t.inst,oct:t.oct,bars:barsOf(t),rate:rateOf(t),seq:t.seq,
           useq:(t.kind==='inst'&&Array.isArray(t.userSeq))?t.userSeq:null,
           vel:(t.kind==='inst'&&Array.isArray(t.vel))?t.vel:null,
           vol:t.vol,pan:t.pan,mute:t.mute,solo:t.solo,fx:t.fx||'off',fxMix:t.fxMix==null?1:t.fxMix,drum:t.drum,p:t.p}))
@@ -159,6 +170,7 @@ function loadSaved(){
       Object.assign(t,{seq:fitArr(o.seq,bars*BAR),last:new Array(bars*BAR).fill(-1),
         userSeq:Array.isArray(o.useq)?fitArr(o.useq,bars*BAR):null,
         vel:Array.isArray(o.vel)?fitVelArr(o.vel,bars*BAR):null,
+        rate:(RATE_VALUES.indexOf(o.rate|0)>=0?o.rate|0:1),
         vol:o.vol==null?.85:o.vol,
         pan:o.pan||0,mute:!!o.mute,solo:!!o.solo,fx:DELAY_IDS.has(o.fx)?o.fx:'off',
         fxMix:(typeof o.fxMix==='number'&&o.fxMix>=0&&o.fxMix<=1)?o.fxMix:1,drum:o.drum||'pop',
@@ -177,7 +189,7 @@ const fitArr=(a,n)=>Array.from({length:n},(_,i)=>(a&&a[i]!==undefined)?clamp(a[i
 const undoStack=[]; const UNDO_MAX=60;
 function snapState(){
   return JSON.stringify({
-    tracks:state.tracks.map(t=>({id:t.id,kind:t.kind,name:t.name,inst:t.inst,oct:t.oct,bars:barsOf(t),
+    tracks:state.tracks.map(t=>({id:t.id,kind:t.kind,name:t.name,inst:t.inst,oct:t.oct,bars:barsOf(t),rate:rateOf(t),
       seq:t.seq,useq:(t.kind==='inst'&&Array.isArray(t.userSeq))?t.userSeq:null,
       vel:(t.kind==='inst'&&Array.isArray(t.vel))?t.vel:null,
       vol:t.vol,pan:t.pan,mute:t.mute,solo:t.solo,fx:t.fx,fxMix:t.fxMix,drum:t.drum,p:t.p})),
@@ -206,6 +218,7 @@ function undo(){
       Object.assign(t,{seq:fitArr(o.seq,bars*BAR),last:new Array(bars*BAR).fill(-1),
         userSeq:Array.isArray(o.useq)?fitArr(o.useq,bars*BAR):null,
         vel:Array.isArray(o.vel)?fitVelArr(o.vel,bars*BAR):null,
+        rate:(RATE_VALUES.indexOf(o.rate|0)>=0?o.rate|0:1),
         vol:o.vol==null?.85:o.vol,pan:o.pan||0,mute:!!o.mute,solo:!!o.solo,
         fx:DELAY_IDS.has(o.fx)?o.fx:'off',fxMix:o.fxMix==null?1:o.fxMix,drum:o.drum||'pop',
         p:(o.kind==='drum'&&o.p)?patForBars(o.p,bars):t.p});

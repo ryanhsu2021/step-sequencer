@@ -7,6 +7,15 @@
 const BAR=16, MAX_BARS=8, ROWS=8, MAX_TRACKS=6;
 /* 步进网格视觉分组：每 4 步一组（第 5/9/13 步前留间隔），一眼看清拍点 */
 const STEP_GAP=k=>k>0&&k%4===0;
+/* ---- 每声部速度（每步时值）：1/16（默认）· 1/8 · 1/4 ----
+   rate ＝ 每步占几个十六分格：1 → 每步 1/16（与全曲同速），2 → 慢一倍，4 → 慢三倍。
+   只影响该声部的播放速率与发音长度，音序内容（哪一步有音）不变 */
+const RATE_VALUES=[1,2,4];
+const RATE_NAME={1:'1/16',2:'1/8',4:'1/4'};
+const rateOf=tr=>{ const v=(tr&&tr.rate|0)||1; return RATE_VALUES.indexOf(v)>=0?v:1; };
+const rateName=v=>RATE_NAME[RATE_VALUES.indexOf(v|0)>=0?(v|0):1];
+/* 该声部一小节（16 步）在基准网格上占多少步：1/16 → 16，1/8 → 32，1/4 → 64 */
+const spanOf=tr=>stepsOf(tr)*rateOf(tr);
 const $=id=>document.getElementById(id);
 const clamp=(v,a,b)=>v<a?a:v>b?b:v;
 const pick=a=>a[(Math.random()*a.length)|0];

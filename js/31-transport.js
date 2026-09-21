@@ -5,6 +5,13 @@
    ============================================================ */
 /* ============ 步进音序器（lookahead 调度） ============ */
 const stepDur=()=>60/bpm/4;
+/* 全曲循环长度：声部按「自身长度 × 速度倍率」算（1/4 速度的 1 小节声部要 64 个基准步才走完），
+   与和弦轨长度取较长者 */
+const loopSteps=()=>{
+  let m=BAR;
+  for(const t of state.tracks) m=Math.max(m,spanOf(t));
+  return Math.max(m,progSteps());
+};
 let isPlaying=false,currentStep=0,nextNoteTime=0,timerId=null;
 const scheduled=[];
 function scheduleStep(g,time){
@@ -14,7 +21,9 @@ function scheduleStep(g,time){
   for(const tr of state.tracks){
     if(tr.mute) continue;
     if(solo&&!tr.solo) continue;
-    const s=g%stepsOf(tr);                 // 各声部按自己的小节数循环
+    const rt=rateOf(tr);
+    if(g%rt!==0) continue;                 // 速度慢的声部：每 rt 个基准步才走一格（1/8 → 每 2 步）
+    const s=Math.floor(g/rt)%stepsOf(tr);  // 各声部按自己的小节数 × 自己的速度循环
     if(tr.kind==='inst'){ const r=tr.seq[s]; if(r!==undefined&&r!==-1) playTrackNote(tr,r,t,velOf(tr,s)); }
     else { for(const id of drumHits(tr,s)) playDrumHit(tr,id,t); }
   }
@@ -29,7 +38,7 @@ function schedulerTick(){
   while(nextNoteTime<audioCtx.currentTime+.12){
     scheduleStep(currentStep,nextNoteTime);
     nextNoteTime+=stepDur();
-    currentStep=(currentStep+1)%Math.max(songSteps(),progSteps());  // 循环长度取声部与和弦轨的较长者
+    currentStep=(currentStep+1)%loopSteps();    // 循环长度取声部（含速度）与和弦轨的较长者
   }
 }
 const playBtn=$('playBtn');
