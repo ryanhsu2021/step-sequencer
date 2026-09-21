@@ -745,6 +745,27 @@ function buildCard(tr,i){
       :'跟随和弦进行：已关闭——播放与编辑互不干扰。点一下开启，现有音符会立即吸附一次，之后继续跟随';
     fol.addEventListener('click',()=>toggleFollow(tr));
     gHar.appendChild(fol);
+    /* 「琶音」开关 + 图案下拉：开启后画下的音符只当节奏用，实际音高按图案从当前和弦生成
+       （非破坏性，与跟随和弦同一条 followRow 管线；renderTracks 重建后 disabled 状态自动跟上） */
+    const arpSw=document.createElement('button');
+    arpSw.type='button';
+    arpSw.className='chip btn-like switch'+(arpOn(tr)?' on':'');
+    arpSw.setAttribute('role','switch');
+    arpSw.setAttribute('aria-checked',arpOn(tr)?'true':'false');
+    arpSw.innerHTML='<span class="sw-lb">琶音</span><span class="sw-track"><i></i></span>';
+    arpSw.title=arpOn(tr)
+      ?'琶音模式：已开启——画下的音符只当节奏栅格用，实际音高按「'+(ARP_MODE_NAME[tr.arp.mode]||'上行')+'」从当前和弦的和弦音自动生成（空步不推进图案）。点一下关闭，音高立即复原'
+      :'琶音模式：已关闭——按你画的原样播放。点一下开启：画下的音符变成节奏栅格，音高从当前和弦的和弦音音池（根·三·五·高八度根）按图案自动生成';
+    arpSw.addEventListener('click',()=>toggleArp(tr));
+    gHar.appendChild(arpSw);
+    const arpSel=document.createElement('select');
+    arpSel.className='arp-mode';
+    ARP_MODE_IDS.forEach(id=>arpSel.add(new Option(ARP_MODE_NAME[id],id)));
+    arpSel.value=(tr.arp&&tr.arp.mode)||'up';
+    arpSel.disabled=!arpOn(tr);
+    arpSel.title='琶音图案：上行（顺着爬）／下行（倒着走）／上下（到顶折返、端点不重复）／随机（同一格每轮同音，预览即实际）';
+    arpSel.addEventListener('change',()=>setArpMode(tr,arpSel.value));
+    gHar.appendChild(arpSel);
     const gVoice=tmGroup('音色');
     const sel=document.createElement('select'); fillInstSelect(sel,tr.inst);
     sel.addEventListener('change',()=>{tr.inst=sel.value;refreshSub(tr);save();});
@@ -794,6 +815,7 @@ function refreshSummary(tr){
     parts.push(INST_NAME(tr.inst));
     parts.push(notes+' 音');
     if(tr.follow) parts.push('🔗 跟随和弦');
+    if(arpOn(tr)) parts.push('🎼 琶音·'+(ARP_MODE_NAME[(tr.arp&&tr.arp.mode)||'up']||'上行'));
   }
   s.textContent=parts.join(' · ');
 }
@@ -1006,23 +1028,26 @@ function refreshStepCell(tr,s){
   if(r!==-1&&tr.last) tr.last[s]=r;
   const v=velOf(tr,s);
   const on=!!tr.userSeq&&Array.isArray(tr.userSeq)&&tr.userSeq[s]!==-1;
-  /* 跟随和弦：音序格位置不动（r），但实际发声可能被折算到别的行（fr）。
+  /* 跟随和弦 / 琶音：音序格位置不动（r），但实际发声可能被折算 / 生成到别的行（fr）。
      用 .ghost 在「实际发声行」画一枚淡色标记，让你看见它到底播成什么音。 */
+  const arp=arpOn(tr);
   const fr=(r!==-1)?followRow(tr,s):-1;
   const shifted=(fr!==r&&fr!==-1);
+  const ghostTag=arp?'🎼 琶音 → 实际发 ':'🔗 跟随和弦 → 实际发 ';
+  const ghostFull=arp?'琶音图案生成的实际发声音高 ':'跟随和弦后的实际发声音高 ';
   for(let i=0;i<col.length;i++){
     const cell=col[i]; if(!cell) continue;
     cell.classList.toggle('on',i===r);
     cell.classList.toggle('anchor',i===r&&on);            // 手摆的音（✨ 的锚点）：加一圈描边
-    cell.classList.toggle('ghost',shifted&&i===fr);       // 跟随折算后的实际发声位置
+    cell.classList.toggle('ghost',shifted&&i===fr);       // 跟随折算 / 琶音生成后的实际发声位置
     cell.style.setProperty('--v',r===i?(v==null?.82:v):0); // 力度→格子不透明度
     const tail='（第 '+(degOfRow(i)+1)+' 级）';
     if(i===r){
       cell.title='第 '+(s+1)+' 步 · '+noteName(rowMidi(i,tr.oct))+tail+
-        (shifted?' · 🔗 跟随和弦 → 实际发 '+noteName(rowMidi(fr,tr.oct)):'')+
+        (shifted?' · '+ghostTag+noteName(rowMidi(fr,tr.oct))+(arp?'（第 '+(arpHitIdx(tr,s)+1)+' 个和弦音）':''):'')+
         ' · 力度 '+(v==null?'默认 82':Math.round(v*100)+'%');
     }else if(shifted&&i===fr){
-      cell.title='第 '+(s+1)+' 步 · 跟随和弦后的实际发声音高 '+noteName(rowMidi(i,tr.oct))+tail;
+      cell.title='第 '+(s+1)+' 步 · '+ghostFull+noteName(rowMidi(i,tr.oct))+tail;
     }else{
       cell.title='第 '+(s+1)+' 步 · '+noteName(rowMidi(i,tr.oct))+tail+'（点这里放置音符）';
     }

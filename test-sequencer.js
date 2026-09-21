@@ -180,6 +180,7 @@ const expose=`
   planToChords,setProgPlan,progKeyOf,planRoman,modeIdx:()=>modeIdx,PLAN_LIB,PROG_PLANS,STYLE,ROMAN,
   rateOf,rateName,spanOf,setRate,loopSteps,RATE_VALUES,
   toggleOpen,toggleFollow,isFollowing,applyFollow,syncFollowers,openId:()=>openTrackId,followOf:t=>!!t.follow,
+  toggleArp,setArpMode,arpRow,arpPoolAt,arpHitIdx,arpOn,ARP_MODE_NAME,
   renderTracks,chordTones,followRow,playMidiOf,
   renderMixer,mixerCard:()=>$('mixerCard'),setTrackVol,setTrackPan,setTrackMute,setTrackSolo,setTrackDelay,setTrackFxMix,
   setChordMute,setChordVolume,chordMuteGetter:()=>chordMute,chordVolGetter:()=>chordVol,
@@ -1220,6 +1221,111 @@ console.log('== 19. 🎼 一键编配 v2：分析旋律 → 更贴合的编配 =
   let noNote=true; try{ T.autoArrange(); }catch(e){ noNote=false; }
   chk('全空旋律点编配不抛错（只提示）',noNote);
 }
+
+console.log('\n== 20. 琶音模式（ARP）：节奏栅格 + 和弦音池图案生成 ==');
+/* ---- 隔离环境：一条声部 + 单个 I 级和弦（断言全部按当前调式动态推导，不硬编码行号） ---- */
+T.state.tracks.length=0;
+T.state.prog=[T.mkChord(0,4,false)]; T.fitProg();
+const ap=T.makeTrack('inst','ap','pluck',0);
+T.state.tracks.push(ap);
+ap.seq=new Array(16).fill(-1);
+[0,2,4,6,8,10].forEach(s=>{ ap.seq[s]=3; });           // 6 个命中；行号随意——琶音模式下画的就是节奏
+const apPool=T.arpPoolAt(ap,0);
+const apSet=T.chordAtFor(T.state.prog,T.stepsOf(ap))[0];
+const apExp=[]; for(let r=7;r>=0;r--) if(apSet.has(T.degOfRow(r))) apExp.push(r);
+chk('音池＝当前和弦的全部和弦音行（音高升序）',String(apPool)===String(apExp),'pool='+apPool+' exp='+apExp);
+chk('音池至少 3 个音（三和弦＋跨八度根音）',apPool.length>=3,'n='+apPool.length);
+const apN=apPool.length, apHits=[0,2,4,6,8,10];
+/* up 上行：第 k 个命中 → 音池第 k%n 个音 */
+ap.arp={on:true,mode:'up'};
+chk('up 上行：按命中序号循环爬音池',
+    apHits.every((s,i)=>T.arpRow(ap,s)===apPool[i%apN]),
+    'got='+apHits.map(s=>T.arpRow(ap,s)).join(',')+' pool='+apPool);
+chk('up：followRow 接管（arp 开启即生效，优先于 follow 开关）',
+    apHits.every(s=>T.followRow(ap,s)===T.arpRow(ap,s)));
+chk('up：arp 关闭时 followRow 原样返回（开关语义）',
+    (ap.arp={on:false,mode:'up'},apHits.every(s=>T.followRow(ap,s)===3)));
+ap.arp={on:true,mode:'up'};
+/* down 下行：倒序循环 */
+ap.arp={on:true,mode:'down'};
+chk('down 下行：从音池顶倒着走',
+    apHits.every((s,i)=>T.arpRow(ap,s)===apPool[apN-1-(i%apN)]),
+    'got='+apHits.map(s=>T.arpRow(ap,s)).join(','));
+/* updown 上下：到顶折返、端点不重复（0,1,2,…,n-1,n-2,…,1 循环） */
+ap.arp={on:true,mode:'updown'};
+const apUd=k=>{const c=2*apN-2,j=k%c;return j<apN?j:c-j;};
+chk('updown 上下：折返且端点不重复',
+    apHits.every((s,i)=>T.arpRow(ap,s)===apPool[apUd(i)]),
+    'got='+apHits.map(s=>T.arpRow(ap,s)).join(',')+' exp='+apHits.map((_,i)=>apPool[apUd(i)]).join(','));
+/* random：确定性伪随机——落在音池内、同一格反复调用稳定（网格预览即实际） */
+ap.arp={on:true,mode:'random'};
+chk('random：全部落在音池内',apHits.every(s=>apPool.indexOf(T.arpRow(ap,s))>=0));
+chk('random：同一格反复调用稳定（每轮循环同音）',
+    apHits.every(s=>T.arpRow(ap,s)===T.arpRow(ap,s)));
+/* 空步不推进图案：步 2 清空后，步 4 是「第 1 个命中」（k=1）而不是 k=2 */
+ap.arp={on:true,mode:'up'}; ap.seq[2]=-1;
+chk('空步不推进图案（arpHitIdx 跳过空步）',
+    T.arpHitIdx(ap,4)===1&&T.arpRow(ap,4)===apPool[1%apN],'k='+T.arpHitIdx(ap,4));
+ap.seq[2]=3;
+/* 非破坏性：整个过程 tr.seq 一字不变 */
+chk('琶音开启期间 tr.seq 一字不改（非破坏性）',
+    apHits.every(s=>ap.seq[s]===3)&&ap.seq.filter(v=>v>=0).length===6);
+/* ---- 持久化：arpOn / arpMode 存档 + 旧档兼容 ---- */
+ap.arp={on:true,mode:'updown'};
+T.save();
+const raw20=JSON.parse(localStorage.getItem('polyseq.v7')||'{}');
+chk('存档含 arpOn / arpMode 字段',
+    raw20.tracks&&raw20.tracks[0]&&raw20.tracks[0].arpOn===true&&raw20.tracks[0].arpMode==='updown',
+    'arp='+(raw20.tracks&&raw20.tracks[0]?JSON.stringify({on:raw20.tracks[0].arpOn,mode:raw20.tracks[0].arpMode}):'无'));
+store['polyseq.v7']=JSON.stringify({tracks:[{id:1,kind:'inst',name:'旧',inst:'piano',oct:0,bars:1,rate:1,seq:[-1],vol:.85,pan:0,mute:false,solo:false,fx:'off',fxMix:1,p:{}}],prog:[],progEdited:false,progBars:1});
+T.loadSaved();
+const la20=T.state.tracks[0];
+chk('旧档读取：arp 安全回落「关 + 上行」',
+    la20.arp&&la20.arp.on===false&&la20.arp.mode==='up','arp='+JSON.stringify(la20.arp));
+/* ---- undo：快照含 arp 状态 ---- */
+T.state.tracks.length=0;
+const ua=T.makeTrack('inst','ua','piano',0);
+T.state.tracks.push(ua);
+ua.seq=new Array(16).fill(-1); ua.seq[0]=0;
+const uaSeq=ua.seq.slice();
+T.pushUndo();                                          // 快照：arp 关
+T.toggleArp(ua);
+chk('toggleArp：开启且默认图案上行',T.arpOn(ua)===true&&ua.arp.mode==='up');
+T.setArpMode(ua,'down');
+chk('setArpMode：图案切到下行',ua.arp.mode==='down');
+T.undo();
+const ub=T.state.tracks[0];                            // undo 会按快照重建声部对象：必须重新取活动引用
+chk('undo：恢复快照（arp 关、图案上行、音序不变）',
+    T.arpOn(ub)===false&&ub.arp.mode==='up'&&String(ub.seq)===String(uaSeq),
+    'arp='+JSON.stringify(ub.arp));
+/* ---- UI：开关 + 图案下拉 ---- */
+T.renderTracks();
+const ucard=T.cardOf(ub.id);
+chk('声部卡渲染出琶音开关（第 2 个 switch）',
+    !!ucard&&ucard.el.querySelectorAll('button.switch').length===2,
+    'n='+(ucard?ucard.el.querySelectorAll('button.switch').length:'无卡'));
+const apSel20=ucard&&ucard.el.querySelector('select.arp-mode');
+chk('图案下拉存在且开关关闭时禁用',!!apSel20&&apSel20.disabled===true&&apSel20.value==='up',
+    'sel='+(apSel20?'value='+apSel20.value+' disabled='+apSel20.disabled:'无'));
+const apSw20=ucard.el.querySelectorAll('button.switch')[1];
+apSw20.fire('click');                                  // → toggleArp：开（内部 renderTracks 重建卡片）
+const ucardB=T.cardOf(ub.id);
+chk('点开关 → arp 开、下拉解禁、aria 同步',
+    T.arpOn(ub)===true&&ucardB.el.querySelector('select.arp-mode').disabled===false
+      &&ucardB.el.querySelectorAll('button.switch')[1].getAttribute('aria-checked')==='true');
+const apSel21=ucardB.el.querySelector('select.arp-mode');
+apSel21.value='updown'; apSel21.fire('change');
+chk('下拉改图案 → tr.arp.mode 跟着变',ub.arp.mode==='updown','mode='+ub.arp.mode);
+T.cardOf(ub.id).el.querySelectorAll('button.switch')[1].fire('click');   // → 关（又重建一次）
+const ucardC=T.cardOf(ub.id);
+chk('再点开关 → arp 关、下拉重新禁用',
+    T.arpOn(ub)===false&&ucardC.el.querySelector('select.arp-mode').disabled===true);
+/* 摘要行：开着时显示「🎼 琶音·图案」 */
+T.toggleArp(ub); T.setArpMode(ub,'down'); T.renderTracks();
+const ucard2=T.cardOf(ub.id);
+const sumTxt=ucard2.el.querySelector('.tc-sum .s-sum');
+chk('收起摘要含「🎼 琶音·下行」',!!sumTxt&&sumTxt.textContent.indexOf('琶音·下行')>=0,
+    'sum='+(sumTxt&&sumTxt.textContent));
 
 console.log('\n=== '+(fail?fail+' 项失败':'全部通过')+'（'+pass+' 通过 / '+fail+' 失败）===');
 process.exit(fail?1:0);

@@ -14,6 +14,7 @@ function seedDefault(){
   mel.userSeq=mel.seq.slice();                       // 示例乐句视作用户素材：✨ 保留它的强拍锚点
   const bass=makeTrack('inst','贝斯',(SP_.bassI&&SP_.bassI[0])||'bass',ARR_LAYER.bass.oct);
   const arp=makeTrack('inst','琶音 Arp',(SP_.chordI&&SP_.chordI[0])||'pluck',ARR_LAYER.arp.oct);
+  arp.arp={on:true,mode:'up'};                        // 示例琶音声部默认开琶音模式：画的音序当节奏，音高实时从和弦生成
   const drum=makeTrack('drum','鼓组');
   state.tracks=[mel,bass,arp,drum];
   /* 只有该风格确实要铺底时才建这一轨，否则会留下一条永远空着的死声部 */

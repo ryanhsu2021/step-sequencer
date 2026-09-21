@@ -200,6 +200,7 @@ function followRow(tr,s){
   if(!tr||tr.kind!=='inst') return tr?tr.seq[s]:-1;
   const r=tr.seq[s];
   if(r==null||r<0) return r;
+  if(tr.arp&&tr.arp.on) return arpRow(tr,s);      // 琶音模式：音高由和弦音池按图案生成（优先于跟随折算）
   if(!isFollowing(tr)) return r;
   const ca=chordAtFor(state.prog,stepsOf(tr));
   const set=ca&&ca[s];
@@ -243,12 +244,77 @@ function reharmonizeTrack(tr){
   }
   return changed;
 }
-/* 和弦轨变化后：跟随声部的音高由 followRow 在播放时实时折算，这里只需重画面板提示。
-   返回是否有跟随声部（用于 toast 判断）。 */
+/* ============ 琶音模式（ARP，非破坏性） ============
+   与「跟随和弦」同一套哲学：网格上画的 step 位置永不改动；开启后「画了音符的步＝节奏栅格」，
+   实际音高在播放时从当前和弦的和弦音行里按图案生成（followRow 优先走 arpRow，
+   因此播放 / 试听 / MIDI 导出 / 网格幽灵标记自动全部生效）。
+     · 音池 pool ＝ 当前和弦在网格里的全部和弦音行，按音高从低到高排
+       （七声调式三和弦 → [根, 三音, 五音, 高八度根]；七和弦自动多一个七音——经典琶音音池）
+     · 图案序号 ＝ 本轮循环里排在这个音前面的命中数（空步不推进 → 琶音连续流动；
+       每轮循环从头再来 → 同一格永远同一个音，预览与实际一致）
+     · 图案：up 上行 / down 下行 / updown 上下（端点不重复）/ random 随机（确定性伪随机，预览一致）
+   纯函数：不写任何持久状态，调度热路径可安全反复调用。 */
+const ARP_MODE_IDS=['up','down','updown','random'];
+const ARP_MODE_NAME={up:'上行',down:'下行',updown:'上下',random:'随机'};
+const arpOn=tr=>!!tr&&tr.kind==='inst'&&!!(tr.arp&&tr.arp.on);
+/* 当前步所属和弦的和弦音行（音高升序：r 越大音越低，所以从大到小遍历） */
+function arpPoolAt(tr,s){
+  const ca=chordAtFor(state.prog,stepsOf(tr));
+  const set=ca&&ca[s];
+  if(!set||!set.size) return null;
+  const rows=[];
+  for(let r=ROWS-1;r>=0;r--) if(set.has(degOfRow(r))) rows.push(r);
+  return rows.length?rows:null;
+}
+/* 本轮循环内该步是第几个命中音（0-based）——空步不推进图案 */
+function arpHitIdx(tr,s){
+  let c=0;
+  for(let i=0;i<s;i++) if(tr.seq[i]>=0) c++;
+  return c;
+}
+/* 该步琶音实际发声的行号（无音池时兜底原样返回） */
+function arpRow(tr,s){
+  const pool=arpPoolAt(tr,s);
+  if(!pool) return tr.seq[s];
+  const n=pool.length, k=arpHitIdx(tr,s), m=(tr.arp&&tr.arp.mode)||'up';
+  let idx;
+  if(m==='down') idx=n-1-(k%n);
+  else if(m==='updown'){
+    if(n<2) idx=0;
+    else{ const c=2*n-2, j=k%c; idx=j<n?j:c-j; }      // 0,1,2,3,2,1 … 端点不重复
+  }
+  else if(m==='random') idx=(tr.id*7349+s*911)%n;    // 确定性伪随机：同一格每轮同音（预览与实际一致）
+  else idx=k%n;                                       // up 上行
+  return pool[idx];
+}
+/* 「琶音」开关：开启后画的音符只当节奏用（音序数据不动，关掉立即复原） */
+function toggleArp(tr){
+  if(!tr||tr.kind!=='inst') return;
+  if(!tr.arp) tr.arp={on:false,mode:'up'};
+  tr.arp.on=!tr.arp.on;
+  renderTracks(); save();
+  toast(tr.arp.on
+    ?('🎼 「'+tr.name+'」琶音模式：已开启——画下的音符变成节奏栅格，音高按「'+(ARP_MODE_NAME[tr.arp.mode]||'上行')+'」从当前和弦自动生成（空步不推进；关掉立即复原）')
+    :('🎼 「'+tr.name+'」琶音模式：已关闭（音高恢复为你画的原样）'));
+}
+/* 琶音图案：up / down / updown / random（开关开着才重画幽灵标记） */
+function setArpMode(tr,m){
+  if(!tr||tr.kind!=='inst') return;
+  if(!tr.arp) tr.arp={on:false,mode:'up'};
+  tr.arp.mode=ARP_MODE_IDS.indexOf(m)>=0?m:'up';
+  if(tr.arp.on){
+    const card=view.cards.get(tr.id);
+    if(card&&card.kind==='inst') refreshAllSteps(tr);
+  }
+  save();
+  toast('🎼 「'+tr.name+'」琶音图案 → '+(ARP_MODE_NAME[tr.arp.mode]||'上行')+(tr.arp.on?'':'（琶音开关目前是关的）'));
+}
+/* 和弦轨变化后：跟随声部的音高由 followRow 在播放时实时折算，琶音声部的音池也随和弦实时变化，
+   这里只需重画面板提示。返回是否有跟随 / 琶音声部（用于 toast 判断）。 */
 function syncFollowers(){
   let any=false;
   for(const tr of state.tracks){
-    if(!isFollowing(tr)) continue;
+    if(!isFollowing(tr)&&!arpOn(tr)) continue;
     any=true;
     const card=view.cards.get(tr.id);
     if(card&&card.kind==='inst'){ refreshAllSteps(tr); refreshSummary(tr); }
