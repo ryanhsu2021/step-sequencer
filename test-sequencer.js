@@ -113,7 +113,9 @@ const expose=`
   DELAY_PRESETS,REV_PRESETS,setTrackFx,setReverb,revGetter:()=>revPreset,trackFx:t=>t.fx,setRevMix:v=>{revMix=v;},getRevMix:()=>revMix,
   setChordFx,applyChordFx,chordFxGetter:()=>chordFx,getChordFxMix:()=>chordFxMix,setChordFxMix:v=>{chordFxMix=v;},chordBusId:CHORD_BUS_ID,
   planToChords,setProgPlan,progKeyOf,planRoman,modeIdx:()=>modeIdx,PLAN_LIB,PROG_PLANS,STYLE,ROMAN,
-  rateOf,rateName,spanOf,setRate,loopSteps,RATE_VALUES};`;
+  rateOf,rateName,spanOf,setRate,loopSteps,RATE_VALUES,
+  toggleOpen,toggleFollow,isFollowing,applyFollow,syncFollowers,openId:()=>openTrackId,followOf:t=>!!t.follow,
+  renderTracks,chordTones};`;
 try{ vm.runInContext(js+expose,sandbox); }catch(e){ console.log('LOAD_FAIL:',e.stack); process.exit(1); }
 const T=sandbox.__T;
 let pass=0,fail=0;
@@ -611,6 +613,102 @@ const on1=(t1[1]&&t1[1][0])||-1, on2=(t2[1]&&t2[1][0])||-1;
 chk('MIDI 每步 tick：1/16 → 8 步 = 1920 tick（PPQ960）',on1===1920,'on1='+on1);
 chk('MIDI 每步 tick：1/8 → 同样 8 步 = 3840 tick（成倍）',on2===3840,'on2='+on2);
 T.setRate(trM,1);
+
+console.log('\n== 17. 手风琴展开 / 跟随和弦开关 ==');
+/* ---- 手风琴：同时只展开一个声部 ---- */
+const cards=()=>T.state.tracks;
+T.state.tracks.forEach(t=>{ t.open=false; });
+T.state.tracks[0].open=true;
+T.openId&&0;                                   // 读当前 openTrackId
+chk('makeTrack 默认 open=true（新声部默认展开）',T.makeTrack('inst','Tmpl','piano',0).open===true,'open!=true');
+/* 归一：手动构造「两个都展开」，renderTracks 后只应剩一个 */
+T.state.tracks.forEach(t=>{ t.open=true; });
+T.renderTracks();
+const openCnt=T.state.tracks.filter(t=>t.open!==false).length;
+chk('手风琴归一：renderTracks 后展开数 ≤1',openCnt<=1,'openCnt='+openCnt);
+/* 切换语义：开一个自动收起另一个 */
+const a=T.state.tracks[0], b=T.state.tracks[1];
+a.open=true; b.open=false; T.refreshAll();
+T.toggleOpen(b);
+chk('toggleOpen：展开 b 后 b.open=true',b.open===true,'b.open='+b.open);
+chk('toggleOpen：展开 b 会收起 a（手风琴）',a.open===false,'a.open='+a.open);
+chk('toggleOpen：openTrackId 指向 b',T.openId()===b.id,'openId='+T.openId()+' b.id='+b.id);
+T.toggleOpen(b);
+chk('toggleOpen：再点 b 收起，openTrackId 置空',b.open===false&&T.openId()===null,'b.open='+b.open+' openId='+T.openId());
+/* ---- 存档：open / follow 持久化 + 旧档兼容 ---- */
+a.open=true; b.follow=true; T.state.tracks.forEach(t=>{ if(t!==a) t.open=false; });
+T.save();
+const raw=JSON.parse(localStorage.getItem('polyseq.v7')||'{}');
+chk('存档含 open 字段',raw.tracks&&raw.tracks[0]&&raw.tracks[0].open===true,'open='+JSON.stringify(raw.tracks&&raw.tracks[0]&&raw.tracks[0].open));
+chk('存档含 follow 字段',raw.tracks&&raw.tracks[1]&&raw.tracks[1].follow===true,'follow='+JSON.stringify(raw.tracks&&raw.tracks[1]&&raw.tracks[1].follow));
+/* 旧档（无 open / follow）读取安全 */
+const oldSnap=JSON.stringify({tracks:[{id:1,kind:'inst',name:'旧',inst:'piano',oct:0,bars:1,rate:1,seq:[-1],last:[-1],vol:.85,pan:0,mute:false,solo:false,fx:'off',fxMix:1,color:'#888',p:{}}],prog:[],progEdited:false,progBars:1});
+store['polyseq.v7']=oldSnap;
+T.loadSaved();
+const lt=T.state.tracks[0];
+chk('旧档读取：open 安全回落 true',lt.open===true,'open='+lt.open);
+chk('旧档读取：follow 安全回落 false',lt.follow===false,'follow='+lt.follow);
+/* ---- 跟随和弦：幂等 + 音高落回和弦内 ---- */
+const ft=T.state.tracks.find(t=>t.kind==='inst');
+ft.seq=new Array(T.stepsOf(ft)).fill(-1);
+for(let i=0;i<8;i++) ft.seq[i]=i;                 // 摆 8 个音，覆盖多个音级
+ft.userSeq=null; ft.follow=false;
+const before=ft.seq.slice();
+const changed1=T.applyFollow(ft,true);
+chk('applyFollow：follow=false 时不动作',changed1===false&&String(ft.seq)===String(before),'changed='+changed1);
+ft.follow=true;
+const changed2=T.applyFollow(ft,true);
+chk('applyFollow：follow=true 时确实挪动了音',changed2===true,'changed='+changed2);
+const ca=T.chordAtFor(T.state.prog,T.stepsOf(ft));
+let outside=0;
+for(let s=0;s<T.stepsOf(ft);s++){
+  const r=ft.seq[s]; if(r<0) continue;
+  if(!ca[s]||!ca[s].has(T.degOfRow(r))) outside++;
+}
+chk('跟随和弦：吸附后 0 个和弦外音',outside===0,'outside='+outside);
+/* 幂等：再跑一次不应再变 */
+const afterFirst=ft.seq.slice();
+const changed3=T.applyFollow(ft,true);
+chk('跟随和弦：幂等（第二次不再改动）',changed3===false&&String(ft.seq)===String(afterFirst),'changed='+changed3);
+/* 和弦变化后 syncFollowers 重新对齐：把和弦换成一个「明显不同」的级数再验证 */
+T.state.prog[0].root=(T.state.prog[0].root+3)%T.scLen();
+T.state.prog[0].tones=T.chordTones(T.state.prog[0].root,false);
+const synced=T.syncFollowers();
+const ca2=T.chordAtFor(T.state.prog,T.stepsOf(ft));
+let outside2=0;
+for(let s=0;s<T.stepsOf(ft);s++){
+  const r=ft.seq[s]; if(r<0) continue;
+  if(!ca2[s]||!ca2[s].has(T.degOfRow(r))) outside2++;
+}
+chk('syncFollowers：和弦改动后跟随声部全部落在和弦内',outside2===0,'outside2='+outside2);
+/* 返回值语义：只有真有音被挪动时才为 true（和弦音集重叠时为 false，属正确行为） */
+const beforeSync=ft.seq.slice();
+T.state.prog[0].root=(T.state.prog[0].root+1)%T.scLen();
+T.state.prog[0].tones=[T.state.prog[0].root,(T.state.prog[0].root+2)%T.scLen(),(T.state.prog[0].root+4)%T.scLen()];
+const moved=T.syncFollowers();
+const didMove=String(ft.seq)!==String(beforeSync);
+chk('syncFollowers 返回值＝是否真有音被挪动',moved===didMove,'moved='+moved+' didMove='+didMove);
+const ca3=T.chordAtFor(T.state.prog,T.stepsOf(ft));
+let outside3=0;
+for(let s=0;s<T.stepsOf(ft);s++){
+  const r=ft.seq[s]; if(r<0) continue;
+  if(!ca3[s]||!ca3[s].has(T.degOfRow(r))) outside3++;
+}
+chk('syncFollowers 再次对齐后仍 0 个和弦外音',outside3===0,'outside3='+outside3);
+/* 幂等：连续两次 syncFollowers，第二次必然不再改动 */
+T.syncFollowers();
+const idem=T.syncFollowers();
+chk('syncFollowers：稳定后再次调用返回 false（幂等）',idem===false,'idem='+idem);
+/* 未开启跟随的声部不受影响 */
+const nf=T.state.tracks.filter(t=>t.kind==='inst'&&t!==ft)[0];
+if(nf){
+  nf.follow=false;
+  const nfBefore=nf.seq.slice();
+  nf.seq=[0,1,2,3,4,5,6,7].concat(new Array(Math.max(0,T.stepsOf(nf)-8)).fill(-1));
+  const nfSet=nf.seq.slice();
+  T.syncFollowers();
+  chk('未开启跟随的声部不被 syncFollowers 改动',String(nf.seq)===String(nfSet),'diff');
+}
 
 console.log('\n=== '+(fail?fail+' 项失败':'全部通过')+'（'+pass+' 通过 / '+fail+' 失败）===');
 process.exit(fail?1:0);

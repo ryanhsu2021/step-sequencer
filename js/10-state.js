@@ -8,8 +8,8 @@ let tid=0;
 function makeTrack(kind,name,inst,oct){
   const t={
     id:++tid, kind:kind||'inst', name:name||('声部 '+tid),
-    inst:inst||'piano', oct:oct||0, bars:1, rate:1,
-    seq:[], last:[], userSeq:null, vel:null,
+    inst:inst||'piano', oct:oct||0, bars:1, rate:1, open:true,
+    seq:[], last:[], userSeq:null, vel:null, follow:false,
     vol:.85, pan:0, mute:false, solo:false, fx:'off', fxMix:1,
     color:TRACK_COLORS[0], p:{},
   };
@@ -66,6 +66,7 @@ function setBars(tr,n){
 }
 const state={tracks:[],prog:[],progEdited:false,progBars:1};
 const soloActive=()=>state.tracks.some(t=>t.solo);
+let openTrackId=null;                 // 手风琴式展开：同时只留一个声部的音序面板展开（null＝全部收起）
 /* 每声部速度（每步时值）：1/16 默认 · 1/8 慢一倍 · 1/4 慢三倍。
    只改本声部的播放速率与发音长度，音序内容与小节数都不变；全曲循环长度会取所有声部中最长的那个 */
 function setRate(tr,v){
@@ -76,6 +77,30 @@ function setRate(tr,v){
   renderTracks(); save();
   toast('「'+tr.name+'」速度 → '+rateName(v)+
     (v===1?'（每步 1/16，与其它声部同速）':v===2?'（每步 1/8，本声部慢一倍：16 步走 2 小节）':'（每步 1/4，本声部慢三倍：16 步走 4 小节）'));
+}
+
+/* 声部展开 / 收起（步进音序器面板）：只影响显示，不影响播放 */
+function toggleOpen(tr){
+  tr.open=!tr.open;
+  if(tr.open) openTrackId=tr.id; else if(openTrackId===tr.id) openTrackId=null;
+  renderTracks(); save();
+}
+/* 「跟随和弦进行」开关：开启时该声部音高实时随和弦进行吸附；
+   回到和弦内音不再二次改动（幂等）。开时立刻吸附一次，之后和弦轨每次变化都会自动跟随 */
+const isFollowing=tr=>tr.kind==='inst'&&!!tr.follow;
+function applyFollow(tr,quiet){
+  if(!isFollowing(tr)) return false;
+  const changed=reharmonizeTrack(tr);
+  if(changed){ refreshAll(); save(); if(!quiet) toast('「'+tr.name+'」已跟随和弦进行（音高对齐）'); }
+  return changed;
+}
+function toggleFollow(tr){
+  tr.follow=!tr.follow;
+  applyFollow(tr,true);
+  renderTracks(); save();
+  toast(tr.follow
+    ?('🔗 「'+tr.name+'」跟随和弦进行：已开启（改和弦会实时跟随）')
+    :('🔓 「'+tr.name+'」跟随和弦进行：已关闭（音高不再随之改动）'));
 }
 
 /* ---- 声部增删 ---- */
@@ -126,7 +151,9 @@ function save(){
         progEdited:!!state.progEdited,
         chordVol:chordVol,
         chordFx:chordFx||'off',chordFxMix:chordFxMix==null?1:chordFxMix,
+        openTrackId:openTrackId==null?null:openTrackId,
         tracks:state.tracks.map(t=>({kind:t.kind,name:t.name,inst:t.inst,oct:t.oct,bars:barsOf(t),rate:rateOf(t),seq:t.seq,
+          open:t.open!==false,follow:!!t.follow,
           useq:(t.kind==='inst'&&Array.isArray(t.userSeq))?t.userSeq:null,
           vel:(t.kind==='inst'&&Array.isArray(t.vel))?t.vel:null,
           vol:t.vol,pan:t.pan,mute:t.mute,solo:t.solo,fx:t.fx||'off',fxMix:t.fxMix==null?1:t.fxMix,drum:t.drum,p:t.p}))
@@ -163,6 +190,7 @@ function loadSaved(){
     chordVol=(typeof d.chordVol==='number'&&d.chordVol>=0&&d.chordVol<=1)?d.chordVol:.8;
     chordFx=DELAY_IDS.has(d.chordFx)?d.chordFx:'off';
     chordFxMix=(typeof d.chordFxMix==='number'&&d.chordFxMix>=0&&d.chordFxMix<=1)?d.chordFxMix:1;
+    openTrackId=(typeof d.openTrackId==='number')?d.openTrackId:null;
     state.tracks=d.tracks.slice(0,MAX_TRACKS).map(o=>{
       const t=makeTrack(o.kind,o.name,o.inst,o.oct);
       const bars=clamp(o.bars|0,1,MAX_BARS);
@@ -171,6 +199,8 @@ function loadSaved(){
         userSeq:Array.isArray(o.useq)?fitArr(o.useq,bars*BAR):null,
         vel:Array.isArray(o.vel)?fitVelArr(o.vel,bars*BAR):null,
         rate:(RATE_VALUES.indexOf(o.rate|0)>=0?o.rate|0:1),
+        open:o.open!==false,
+        follow:(o.kind==='inst')&&!!o.follow,
         vol:o.vol==null?.85:o.vol,
         pan:o.pan||0,mute:!!o.mute,solo:!!o.solo,fx:DELAY_IDS.has(o.fx)?o.fx:'off',
         fxMix:(typeof o.fxMix==='number'&&o.fxMix>=0&&o.fxMix<=1)?o.fxMix:1,drum:o.drum||'pop',
@@ -180,6 +210,14 @@ function loadSaved(){
     recolor();
     if(!state.prog.length) state.prog=randomProgression();
     fitProg();
+    /* 手风琴一致性：读档后只允许一个声部展开；若都收起则展开第一个，避免整屏空壳 */
+    if(openTrackId!=null&&!state.tracks.some(t=>t.id===openTrackId)) openTrackId=null;
+    if(openTrackId==null&&state.tracks.length){
+      const opened=state.tracks.filter(t=>t.open!==false);
+      if(!opened.length){ state.tracks[0].open=true; openTrackId=state.tracks[0].id; }
+      else{ const keep=opened.find(t=>t.id===openTrackId)||opened[0]; openTrackId=keep.id;
+        state.tracks.forEach(t=>{ t.open=(t.id===keep.id); }); }
+    }
     return true;
   }catch(e){ return false; }
 }
@@ -190,6 +228,7 @@ const undoStack=[]; const UNDO_MAX=60;
 function snapState(){
   return JSON.stringify({
     tracks:state.tracks.map(t=>({id:t.id,kind:t.kind,name:t.name,inst:t.inst,oct:t.oct,bars:barsOf(t),rate:rateOf(t),
+      open:t.open!==false,follow:!!t.follow,
       seq:t.seq,useq:(t.kind==='inst'&&Array.isArray(t.userSeq))?t.userSeq:null,
       vel:(t.kind==='inst'&&Array.isArray(t.vel))?t.vel:null,
       vol:t.vol,pan:t.pan,mute:t.mute,solo:t.solo,fx:t.fx,fxMix:t.fxMix,drum:t.drum,p:t.p})),
@@ -219,6 +258,7 @@ function undo(){
         userSeq:Array.isArray(o.useq)?fitArr(o.useq,bars*BAR):null,
         vel:Array.isArray(o.vel)?fitVelArr(o.vel,bars*BAR):null,
         rate:(RATE_VALUES.indexOf(o.rate|0)>=0?o.rate|0:1),
+        open:o.open!==false,follow:(o.kind==='inst')&&!!o.follow,
         vol:o.vol==null?.85:o.vol,pan:o.pan||0,mute:!!o.mute,solo:!!o.solo,
         fx:DELAY_IDS.has(o.fx)?o.fx:'off',fxMix:o.fxMix==null?1:o.fxMix,drum:o.drum||'pop',
         p:(o.kind==='drum'&&o.p)?patForBars(o.p,bars):t.p});

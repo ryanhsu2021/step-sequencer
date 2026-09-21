@@ -98,12 +98,12 @@ function setProgBars(n){
   n=clamp(n|0,1,MAX_BARS);
   if(n===progBars()) return;
   state.progBars=n; chordEdit=null;
-  fitProg(); renderChord(); save();
+  fitProg(); renderChord(); syncFollowers(); save();
   toast('和弦进行轨 → '+n+' 小节（'+progBeats()+' 拍，与声部小节数无关）');
 }
 function setProg(p,edited){
   state.prog=p; state.progEdited=!!edited; chordEdit=null;
-  fitProg(); renderChord(); save();
+  fitProg(); renderChord(); syncFollowers(); save();
 }
 /* ---- 常用进行预设：把一条「级数走向」铺满当前和弦轨的拍数 ----
    和弦比拍数还多 → 只取前 N 个（每个至少 1 拍）；否则平均分配、余数补给前面；相邻同根合并 */
@@ -173,9 +173,15 @@ function reharmonizeTrack(tr){
   }
   if(changed){
     const card=view.cards.get(tr.id);
-    if(card&&card.kind==='inst') for(let s=0;s<n;s++) updateDial(tr,s);
+    if(card&&card.kind==='inst') refreshAllSteps(tr);
   }
   return changed;
+}
+/* 和弦轨变化后：让所有「跟随和弦」声部实时对齐（幂等——已在和弦内的音不动） */
+function syncFollowers(){
+  let any=false;
+  for(const tr of state.tracks){ if(isFollowing(tr)&&applyFollow(tr,true)) any=true; }
+  return any;
 }
 /* ---- 和弦进行轨发声：播放时每拍触发当前和弦，音色 / 音量 / 延时可选（默认跟风格） ---- */
 let chordInst='', chordMute=false, chordVol=.8, chordFx='off', chordFxMix=1;

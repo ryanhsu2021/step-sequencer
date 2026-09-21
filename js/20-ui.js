@@ -80,6 +80,13 @@ function renderTracks(){
   renderChord();
   const stack=$('trackStack');
   stack.innerHTML=''; view.cards.clear();
+  /* 手风琴一致性：至多一个声部展开。都收起时保持收起（不强制打开）；有多个时只留 openTrackId / 第一个 */
+  const opened=state.tracks.filter(t=>t.open!==false);
+  if(opened.length>1){
+    const keep=opened.find(t=>t.id===openTrackId)||opened[0];
+    state.tracks.forEach(t=>{ t.open=(t.id===keep.id); });
+    openTrackId=keep.id;
+  }else openTrackId=opened.length?opened[0].id:null;
   state.tracks.forEach((tr,i)=>stack.appendChild(buildCard(tr,i)));
   relayoutSteps();                               // 渲染完量一次行宽，决定 16 / 8 / 4 步一行
 }
@@ -324,7 +331,7 @@ function setSegChord(i,root,seventh){
   const p=fitProg(), c=p[i]; if(!c) return;
   pushUndo();
   p[i]=mkChord(root,c.beats,seventh===undefined?c.seventh:seventh);
-  state.progEdited=true; save(); audChord(p[i]);
+  state.progEdited=true; syncFollowers(); save(); audChord(p[i]);
 }
 function splitSeg(i){
   const p=fitProg(), c=p[i]; if(!c) return;
@@ -332,8 +339,7 @@ function splitSeg(i){
   pushUndo();
   const a=Math.floor(c.beats/2), b=c.beats-a;
   p.splice(i,1,mkChord(c.root,a,c.seventh),mkChord(c.root,b,c.seventh));
-  state.progEdited=true; chordEdit=i+1;
-  renderChord(); save();
+  state.progEdited=true; renderChord(); syncFollowers(); save();
   toast('已插入第 '+(i+2)+' 个和弦——点它挑个新和弦');
 }
 function segLen(i,d){
@@ -343,7 +349,7 @@ function segLen(i,d){
   pushUndo();
   if(d>0){ if(nb.beats<2){ toast('相邻的和弦只剩 1 拍，给不出更多'); return; } c.beats++; nb.beats--; }
   else{ if(c.beats<2){ toast('最短 1 拍'); return; } c.beats--; nb.beats++; }
-  state.progEdited=true; renderChord(); save();
+  state.progEdited=true; renderChord(); syncFollowers(); save();
 }
 function delSeg(i){
   const p=fitProg();
@@ -352,22 +358,25 @@ function delSeg(i){
   const c=p[i], nb=p[i+1]||p[i-1];
   nb.beats+=c.beats; p.splice(i,1);
   if(chordEdit!=null) chordEdit=chordEdit>=p.length?null:chordEdit;
-  state.progEdited=true; renderChord(); save();
+  state.progEdited=true; renderChord(); syncFollowers(); save();
   toast('已删除一个和弦，拍数并入相邻段');
 }
 
 function buildCard(tr,i){
+  const isOpen=tr.open!==false;
   const el=document.createElement('section');
-  el.className='tcard'+(tr.mute?' muted':'')+(tr.solo?' solo':'');
+  el.className='tcard'+(tr.mute?' muted':'')+(tr.solo?' solo':'')+(isOpen?' open':' collapsed');
   el.style.setProperty('--tcb',tr.color.bg);
   el.style.setProperty('--tci',tr.color.ink);
   el.style.setProperty('--tcd',tr.color.deep);
-  const card={el,kind:tr.kind,knobs:[],nums:[],dc:new Map()};
+  const card={el,kind:tr.kind,knobs:[],nums:[],cells:[],dc:new Map()};
   view.cards.set(tr.id,card);
 
-  /* ---- 头部：编号 / 名称 / 说明 / 圆形按钮（DAW 式分区：混音 · 生成 · 排序 · 危险） ---- */
+  /* ---- 头部：编号 / 展开▸ / 名称 / 说明 / 圆形按钮（DAW 式分区：混音 · 生成 · 排序 · 危险） ---- */
   const head=document.createElement('div'); head.className='tc-head';
   head.innerHTML=
+    '<button class="tc-caret" data-act="fold" aria-expanded="'+(isOpen?'true':'false')+'" title="'+
+      (isOpen?'收起音序面板':'展开音序面板')+'"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2.5 L8 6 L4 9.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></button>'+
     '<span class="tc-num">'+(i+1)+'</span>'+
     '<input class="tc-name" maxlength="14" spellcheck="false">'+
     '<span class="tc-sub"></span><span class="spacer"></span>'+
@@ -398,7 +407,8 @@ function buildCard(tr,i){
   name.addEventListener('input',()=>{tr.name=name.value||'声部';head.querySelector('.tc-sub').textContent=trackDesc(tr);save();});
   head.querySelectorAll('button[data-act]').forEach(b=>b.addEventListener('click',()=>{
     const a=b.dataset.act;
-    if(a==='opt') optimizeForTrack(tr);
+    if(a==='fold') toggleOpen(tr);
+    else if(a==='opt') optimizeForTrack(tr);
     else if(a==='rand') (tr.kind==='drum'?randomizeDrum:randomizeForTrack)(tr);
     else if(a==='up'||a==='down') moveTrack(tr.id,a==='up'?-1:1);
     else if(a==='mute'){tr.mute=!tr.mute;renderTracks();}
@@ -406,7 +416,21 @@ function buildCard(tr,i){
     else if(a==='clear') clearTrack(tr);
     else if(a==='del') removeTrack(tr.id);
   }));
-  el.appendChild(head);
+  /* 摘要行：收起时在头部下方给一行「小节 · 速度 · 音色 · 跟随」小标，方便不开面板也能看清状态 */
+  const summary=document.createElement('div'); summary.className='tc-sum';
+  summary.innerHTML='<span class="s-sum"></span>';
+  el.append(head,summary);
+
+  /* 收起态：只保留头部 + 摘要（点击标题区也能展开） */
+  const toggleFromBar=e=>{
+    if(e.target.closest('button,input,select,label')) return;
+    toggleOpen(tr);
+  };
+  head.addEventListener('click',toggleFromBar);
+  summary.addEventListener('click',()=>toggleOpen(tr));
+
+  const pane=document.createElement('div'); pane.className='tc-pane';
+  el.appendChild(pane);
 
   /* ---- 参数行（DAW 式分区：编排 · 鼓组/和声 · 音色 · 混音 · 效果） ---- */
   const meta=document.createElement('div'); meta.className='tc-meta';
@@ -450,19 +474,19 @@ function buildCard(tr,i){
     gFx.appendChild(chipFx(tr));
     gFx.appendChild(chipRange('强度',0,100,Math.round((tr.fxMix==null?1:tr.fxMix)*100),v=>v,x=>{tr.fxMix=x/100;save();}));
   }else{
-    /* 「⟳ 对齐和弦」：一次性触发——点一下把本声部现有音符吸附到当前和弦进行轨；
-       没有持久状态，和弦轨之后再变想重新对齐就再点一次。✨/🎼 恒用和弦轨做和声 */
+    /* 「跟随和弦进行」开关：开启时该声部音高实时随和弦轨吸附（改和弦即跟随），
+       关闭时不动音高；回到和弦内音不再二次改动（幂等）。✨/🎼 恒用和弦轨做和声 */
     const gHar=tmGroup('和声');
     const fol=document.createElement('button');
     fol.type='button';
-    fol.className='chip btn-like';
-    fol.textContent='⟳ 吸附和弦 Snap';
-    fol.title='把本声部现有音符一次性吸附（Snap）到最近的和弦音（和弦外的音就近挪进和弦内）';
-    fol.addEventListener('click',()=>{
-      const changed=reharmonizeTrack(tr);
-      save();
-      toast(changed?('「'+tr.name+'」已吸附到和弦进行轨（音高对齐）'):('「'+tr.name+'」的音符都已落在和弦内，无需吸附'));
-    });
+    fol.className='chip btn-like switch'+(tr.follow?' on':'');
+    fol.setAttribute('role','switch');
+    fol.setAttribute('aria-checked',tr.follow?'true':'false');
+    fol.innerHTML='<span class="sw-lb">跟随和弦</span><span class="sw-track"><i></i></span>';
+    fol.title=tr.follow
+      ?'跟随和弦进行：已开启——调整上方和弦轨时，本声部音高会自动吸附到和弦音（已落在和弦内的音不会二次改动）。点一下关闭'
+      :'跟随和弦进行：已关闭——播放与编辑互不干扰。点一下开启，现有音符会立即吸附一次，之后继续跟随';
+    fol.addEventListener('click',()=>toggleFollow(tr));
     gHar.appendChild(fol);
     const gVoice=tmGroup('音色');
     const sel=document.createElement('select'); fillInstSelect(sel,tr.inst);
@@ -478,67 +502,106 @@ function buildCard(tr,i){
     gFx.appendChild(chipFx(tr));
     gFx.appendChild(chipRange('强度',0,100,Math.round((tr.fxMix==null?1:tr.fxMix)*100),v=>v,x=>{tr.fxMix=x/100;save();}));
   }
-  el.appendChild(meta);
+  pane.appendChild(meta);
 
   /* ---- 步进区 ---- */
   if(tr.kind==='inst'){
-    card.stepArea=buildStepRow(tr,card); el.appendChild(card.stepArea);
+    card.stepArea=buildStepRow(tr,card); pane.appendChild(card.stepArea);
   }else{
-    card.stepArea=buildDrumGrid(tr,card); el.appendChild(card.stepArea);
+    card.stepArea=buildDrumGrid(tr,card); pane.appendChild(card.stepArea);
     const note=document.createElement('div'); note.className='dnote';
     note.textContent='点击格子即可编辑每条音色；上面的预设只是起点，套用后仍可自由修改。';
-    el.appendChild(note);
+    pane.appendChild(note);
   }
   head.querySelector('.tc-sub').textContent=trackDesc(tr);
+  refreshSummary(tr);
   return el;
+}
+/* 收起态摘要：小节 · 速度 · 音色 / 命中数 · 跟随状态 */
+function refreshSummary(tr){
+  const card=view.cards.get(tr.id); if(!card) return;
+  const s=card.el.querySelector('.tc-sum .s-sum'); if(!s) return;
+  const parts=[barsOf(tr)+' 小节', rateName(rateOf(tr))];
+  if(tr.kind==='drum'){
+    const hits=DRUM_LANES.reduce((a,l)=>a+((tr.p[l.id]||'').match(/x/g)||[]).length,0);
+    parts.push(hits+' hits');
+  }else{
+    const notes=tr.seq.filter(v=>v>=0).length;
+    parts.push(INST_NAME(tr.inst));
+    parts.push(notes+' 音');
+    if(tr.follow) parts.push('🔗 跟随和弦');
+  }
+  s.textContent=parts.join(' · ');
 }
 function refreshSub(tr){
   const card=view.cards.get(tr.id); if(!card) return;
   const sub=card.el.querySelector('.tc-sub'); if(sub) sub.textContent=trackDesc(tr);
+  refreshSummary(tr);
 }
 
-/* ---- 旋律声部：每小节若干行旋钮（宽度不够时把 16 步拆成 8 / 4 步一行，无需横向滚动） ---- */
+/* ---- 旋律声部：步进音序器网格（行＝音级 · 列＝步），音高直接点格；宽度不够时拆成 8 / 4 步一行 ---- */
 let stepLine=BAR, drumLine=BAR;                   // 每行放多少步（自适应结果）
 const CHUNKS=(n,per)=>{const o=[];for(let i=0;i<n;i+=per)o.push([i,Math.min(i+per,n)]);return o;};
 function buildStepRow(tr,card){
-  const wrap=document.createElement('div'); wrap.className='stepwrap';
+  const wrap=document.createElement('div'); wrap.className='stepwrap sq';
   drawStepRow(tr,card,wrap,stepLine);
   return wrap;
 }
+/* 音高行表（自上而下：高音 → 低音），用当前调式的音名标注 */
+function buildSqRows(tr,wrap,per,card){
+  const n=stepsOf(tr), stepLabelCol=document.createElement('div');
+  return {n,stepLabelCol};
+}
 function drawStepRow(tr,card,wrap,per){
   wrap.innerHTML=''; wrap.classList.toggle('multiline',per<BAR);
-  card.knobs=[]; card.nums=[];
+  card.knobs=[]; card.nums=[]; card.cells=[];
   const nb=barsOf(tr);
+  /* 行首音名列（与网格贴合，随滚动不动）＋ 步号行 */
   for(let b=0;b<nb;b++){
-    const line=document.createElement('div'); line.className='barrow';
-    const tag=document.createElement('div'); tag.className='barnum'; tag.textContent=b+1;
-    tag.title='第 '+(b+1)+' 小节（步 '+(b*BAR+1)+'–'+((b+1)*BAR)+'）';
-    const body=document.createElement('div'); body.className='barbody';
     for(const [a,e] of CHUNKS(BAR,per)){         // 一小节按 per 步拆成若干行
-      const seg=document.createElement('div'); seg.className='stline';
-      const nums=document.createElement('div'); nums.className='stepnums';
-      const row=document.createElement('div'); row.className='steprow';
+      const seg=document.createElement('div'); seg.className='sqseg';
+      const head=document.createElement('div'); head.className='shead';
+      /* 左上角小标签：小节 / 步范围 */
+      const tag=document.createElement('div'); tag.className='sqtag';
+      tag.textContent=(nb>1?(b+1)+'·':'')+(a+1)+'–'+e;
+      tag.title='第 '+(b+1)+' 小节 · 步 '+((b*BAR+a)+1)+'–'+(b*BAR+e);
+      head.appendChild(tag);
+      const nums=document.createElement('div'); nums.className='stepnums sq';
       for(let k=a;k<e;k++){
         const s=b*BAR+k, gap=STEP_GAP(k)&&k>a;   // 行首不留分组缩进
-        const n=document.createElement('div');
-        n.className='stepnum'+(gap?' gap':''); n.textContent=k+1;
-        nums.appendChild(n); card.nums[s]=n;
-        const slot=document.createElement('div'); slot.className='slot'+(gap?' gap':'');
-        const d=document.createElement('div');
-        d.className='dial'; d.tabIndex=0; d.setAttribute('role','slider');
-        d.setAttribute('aria-label','第'+(b+1)+'小节第'+(k+1)+'步音高');
-        const ring=document.createElement('div'); ring.className='ring';
-        const mk=document.createElement('div'); mk.className='mark'; ring.appendChild(mk);
-        const cap=document.createElement('div'); cap.className='cap'; cap.textContent='—';
-        d.append(ring,cap); slot.appendChild(d); row.appendChild(slot);
-        card.knobs[s]={dial:d,ring,cap,mark:mk};
-        attachDialEvents(d,tr,s);
-        updateDial(tr,s);
+        const nn=document.createElement('div');
+        nn.className='stepnum'+(gap?' gap':''); nn.textContent=k+1;
+        nums.appendChild(nn); card.nums[s]=nn;
       }
-      seg.append(nums,row); body.appendChild(seg);
+      head.appendChild(nums);
+      seg.appendChild(head);
+      /* 网格本体：ROWS 行 × per 列 */
+      const body=document.createElement('div'); body.className='sqbody';
+      for(let r=0;r<ROWS;r++){
+        const row=document.createElement('div'); row.className='sqrow';
+        const lb=document.createElement('div'); lb.className='sqlb';
+        lb.textContent=noteName(rowMidi(r,tr.oct));
+        lb.title='第 '+(degOfRow(r)+1)+' 级 · '+noteName(rowMidi(r,tr.oct));
+        row.appendChild(lb);
+        for(let k=a;k<e;k++){
+          const s=b*BAR+k, gap=STEP_GAP(k)&&k>a;
+          const cell=document.createElement('div');
+          cell.className='sqcell'+(gap?' gap':'')+(r===MID_ROW?' mid':'');
+          cell.tabIndex=0;
+          cell.setAttribute('role','button');
+          cell.setAttribute('aria-label','第'+(b*BAR+k+1)+'步 '+noteName(rowMidi(r,tr.oct)));
+          attachStepCellEvents(cell,tr,s,r);
+          row.appendChild(cell);
+          if(!card.cells[s]) card.cells[s]=[];
+          card.cells[s][r]=cell;
+        }
+        body.appendChild(row);
+      }
+      seg.appendChild(body);
+      wrap.appendChild(seg);
     }
-    line.append(tag,body); wrap.appendChild(line);
   }
+  refreshAllSteps(tr);
 }
 
 /* ---- 鼓声部：7 lane × (16 步 × 小节数) 自由编辑 ---- */
@@ -650,28 +713,31 @@ function refreshDrumCells(tr){
 }
 function refreshAll(){
   for(const tr of state.tracks){
-    const n=stepsOf(tr);
-    if(tr.kind==='inst'){ for(let s=0;s<n;s++) updateDial(tr,s); }
+    if(tr.kind==='inst'){ refreshAllSteps(tr); }
     else refreshDrumCells(tr);
   }
 }
 
-/* ---- 旋钮状态 ---- */
-function posOf(tr,s){return tr.seq[s]===-1?0:ROWS-tr.seq[s];}
-const rowOfPos=p=>p===0?-1:ROWS-p;
-function updateDial(tr,s){
-  const card=view.cards.get(tr.id); if(!card||!card.knobs[s]) return;
-  const p=posOf(tr,s), r=tr.seq[s];
-  if(r!==-1) tr.last[s]=r;
+/* ---- 步进音序器网格状态 ---- */
+function updateDial(tr,s){ refreshStepCell(tr,s); }
+function refreshStepCell(tr,s){
+  const card=view.cards.get(tr.id); if(!card||!card.cells||!card.cells[s]) return;
+  const col=card.cells[s], r=tr.seq[s];
+  if(r!==-1&&tr.last) tr.last[s]=r;
   const v=velOf(tr,s);
-  card.knobs[s].ring.style.transform=`rotate(${-p*360/9}deg)`;
-  card.knobs[s].cap.textContent=r===-1?'—':noteName(rowMidi(r,tr.oct));
-  card.knobs[s].mark.style.opacity=(r===-1||v==null)?1:(.35+.65*v);   // 手动调过力度：越强越实
-  card.knobs[s].dial.classList.toggle('on',r!==-1);
-  card.knobs[s].dial.setAttribute('aria-valuenow',String(p));
-  card.knobs[s].dial.title=r===-1
-    ?('第 '+(s+1)+' 步 · 空（点击 / 拖拽摆放音符）')
-    :('第 '+(s+1)+' 步 · '+noteName(rowMidi(r,tr.oct))+'（第 '+(degOfRow(r)+1)+' 级）· 力度 '+(v==null?'默认 82':Math.round(v*100))+'%（滚轮调力度）');
+  const on=!!tr.userSeq&&Array.isArray(tr.userSeq)&&tr.userSeq[s]!==-1;
+  for(let i=0;i<col.length;i++){
+    const cell=col[i]; if(!cell) continue;
+    cell.classList.toggle('on',i===r);
+    cell.classList.toggle('anchor',i===r&&on);            // 手摆的音（✨ 的锚点）：加一圈描边
+    cell.style.setProperty('--v',r===i?(v==null?.82:v):0); // 力度→格子不透明度
+    if(i===r) cell.title='第 '+(s+1)+' 步 · '+noteName(rowMidi(i,tr.oct))+'（第 '+(degOfRow(i)+1)+' 级）· 力度 '+(v==null?'默认 82':Math.round(v*100))+'%';
+    else cell.title='第 '+(s+1)+' 步 · '+noteName(rowMidi(i,tr.oct))+'（点这里放置音符）';
+  }
+}
+function refreshAllSteps(tr){
+  const n=stepsOf(tr);
+  for(let s=0;s<n;s++) refreshStepCell(tr,s);
 }
 
 /* ---- 播放头（所有卡片按各自小节数循环同步） ---- */
@@ -684,7 +750,8 @@ function paintHead(step){
     if(card.kind==='inst'){
       for(let i=0;i<n;i++){
         const on=i===s;
-        if(card.knobs[i]){card.knobs[i].dial.classList.toggle('ph',on);card.nums[i].classList.toggle('active',on);}
+        if(card.nums[i]) card.nums[i].classList.toggle('active',on);
+        if(card.cells[i]) for(const c of card.cells[i]) if(c) c.classList.toggle('ph',on);
       }
     }else{
       for(const [,cells] of card.dc) for(let i=0;i<n;i++) if(cells[i]) cells[i].classList.toggle('ph',i===s);
@@ -709,8 +776,8 @@ function redrawDrumAreas(per){
   }
 }
 function relayoutSteps(){
-  const first=()=>document.querySelector('.stepwrap');
-  if(first()){                                   // 旋律旋钮行：按实测行宽 16 → 8 → 4 逐档试
+  const first=()=>document.querySelector('.stepwrap.sq')||document.querySelector('.stepwrap');
+  if(first()){                                   // 步进网格：按实测行宽 16 → 8 → 4 逐档试
     let cur=stepLine;
     if(cur!==BAR){ redrawStepAreas(BAR); cur=BAR; }
     for(const per of [BAR,BAR/2,BAR/4]){
