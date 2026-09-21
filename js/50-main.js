@@ -12,12 +12,23 @@ function seedDefault(){
   const mel=makeTrack('inst','主旋律',(SP_.mel&&SP_.mel[0])||'epiano',0);
   mel.seq=DEMO_MEL.slice();
   mel.userSeq=mel.seq.slice();                       // 示例乐句视作用户素材：✨ 保留它的强拍锚点
-  const bass=makeTrack('inst','贝斯',(SP_.bassI&&SP_.bassI[0])||'bass',-1);
-  const arp=makeTrack('inst','琶音 Arp',(SP_.chordI&&SP_.chordI[0])||'pluck',0);
+  const bass=makeTrack('inst','贝斯',(SP_.bassI&&SP_.bassI[0])||'bass',ARR_LAYER.bass.oct);
+  const arp=makeTrack('inst','琶音 Arp',(SP_.chordI&&SP_.chordI[0])||'pluck',ARR_LAYER.arp.oct);
   const drum=makeTrack('drum','鼓组');
   state.tracks=[mel,bass,arp,drum];
+  /* 只有该风格确实要铺底时才建这一轨，否则会留下一条永远空着的死声部 */
+  if(SP_.padRole){
+    const pad=makeTrack('inst','铺底',(SP_.padI&&SP_.padI[0])||'pad',ARR_LAYER.pad.oct);
+    state.tracks.splice(3,0,pad);
+  }
   recolor();
-  fillBass(bass,state.prog); fillArp(arp,state.prog);
+  /* 用同一套「旋律画像」生成贝斯 / 琶音 / 铺底，保证示例曲一开场就有完整的三层编配。
+     注意 frames 必须是 chordFramesAt() 的「逐步展开」结果——直接把段列表传进去会索引错位。 */
+  const p=state.prog;
+  const M=analyzeMelody(mel,chordFramesAt(p,stepsOf(mel)));
+  fillBass(bass,M,p); fillArp(arp,M,p);
+  const padT=state.tracks.find(t=>t.name==='铺底');
+  if(padT) fillPad(padT,M,p);
   const sd=styleDrumPick(1);
   drum.p=sd.p; drum.drum=sd.id;
   renderTracks(); save();

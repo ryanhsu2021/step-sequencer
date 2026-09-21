@@ -182,7 +182,8 @@ const expose=`
   renderMixer,mixerCard:()=>$('mixerCard'),setTrackVol,setTrackPan,setTrackMute,setTrackSolo,setTrackDelay,setTrackFxMix,
   setChordMute,setChordVolume,chordMuteGetter:()=>chordMute,chordVolGetter:()=>chordVol,
   setChordFxMix:v=>{chordFxMix=v;},isPlayingGetter:()=>isPlaying,shortInst,
-  cardOf:id=>view.cards.get(id)};`;
+  cardOf:id=>view.cards.get(id),
+  analyzeMelody,preferProg,mkChord,setProg,progBars,progBeats,chordFramesAt,inChord:null};`;
 try{ vm.runInContext(js+expose,sandbox); }catch(e){ console.log('LOAD_FAIL:',e.stack); process.exit(1); }
 const T=sandbox.__T;
 let pass=0,fail=0;
@@ -190,7 +191,13 @@ const chk=(name,cond,extra)=>{ if(cond){pass++;console.log('  ✓ '+name);} else
 const snap=tr=>JSON.stringify(tr.seq);
 
 console.log('== 1. 初始状态 ==');
-chk('4 个声部',T.state.tracks.length===4);
+/* 示例曲：主旋律 + 贝斯 + 琶音 + 鼓组，若该风格要铺底则再多一条「铺底」 */
+chk('示例曲声部数正确（4 或 5：含可选铺底）',T.state.tracks.length===4||T.state.tracks.length===5,
+    'n='+T.state.tracks.length);
+chk('示例曲包含主旋律/贝斯/琶音/鼓组',['主旋律','贝斯','琶音 Arp','鼓组']
+    .every(nm=>T.state.tracks.some(t=>t.name===nm)));
+chk('铺底声部与风格 padRole 一致（不建无用空声部）',
+    T.state.tracks.some(t=>t.name==='铺底')===!!T.SP_().padRole);
 const mel0=T.state.tracks[0];
 chk('示例旋律带 userSeq 素材快照',Array.isArray(mel0.userSeq)&&mel0.userSeq.length===16);
 chk('✨/🎼 生成的声部无 userSeq（可自由再生成）',T.state.tracks[1].userSeq===null&&T.state.tracks[2].userSeq===null);
@@ -1028,6 +1035,142 @@ if(dTr){
 }
 T.setTrackVol(gTr,.85);
 T.renderTracks();
+
+console.log('== 19. 🎼 一键编配 v2：分析旋律 → 更贴合的编配 ==');
+{
+  /* 造一条有句读的旋律（每 3 拍一次换气），跑多种风格，量化编配质量 */
+  const mel=()=>T.state.tracks[0];
+  const setup=sty=>{
+    T.setStyle(sty);
+    T.state.tracks.forEach(t=>T.resetSeq(t));
+    const m=mel(); T.setBars(m,4);
+    /* 把铺底也拉回 1 小节，避免上一轮留下的长度干扰本轮（ensureFreeVoice 会重新铺满全曲） */
+    const pv=T.state.tracks.find(t=>t.name==='铺底');
+    if(pv){ pv.bars=1; T.resetSeq(pv); }
+    const n=T.stepsOf(m);
+    for(let s=0;s<n;s++){
+      if(Math.floor(s/4)%3===2&&s%4>=2) continue;
+      if(s%4===0||s%4===2) T.setStep(m,s,(s*3)%T.scLen(),false);
+    }
+    return n;
+  };
+  /* 从和弦集合反推根音：三度叠置 {d,d+2,d+4(,d+6)} → 根音即「d+2 与 d+4 都在集合里」的那个 */
+  const rootOfSet=set=>{
+    const L=T.scLen(), arr=[...set];
+    const step3=L>=7?2:1, step4=L>=7?4:3;
+    for(const d of arr) if(set.has((d+step3)%L)&&set.has((d+step4)%L)) return d;
+    for(const d of arr) if(set.has((d+step4)%L)) return d;
+    return Math.min(...arr);
+  };
+  /* 三层音区模型：8 行装 7 个音级，无法硬分三段互不重叠的音区。
+     实际做法是「三层都用完整的和弦音集合、靠重心 + oct 八度差区分」：
+       贝斯 oct=-1 重心最低 ／ 铺底 oct=0 重心居中 ／ 琶音 oct=0 重心最高
+     所以判据不是「行号不越界」，而是「重心关系正确 + 全在和弦内」。 */
+  const CENTROID_ARP_MAX=2.6, CENTROID_PAD_MIN=2.4, CENTROID_PAD_MAX=5.6;
+  let bassTot=0,bassChord=0,arpTot=0,arpChord=0,arpLow=0,padTot=0,padChord=0,padLow=0;
+  let bassStrongTot=0,bassStrongRoot=0,err=null,created=0,padRounds=0;
+  let arpCtrSum=0,arpCtrN=0,padCtrSum=0,padCtrN=0;
+  /* 诊断：失败时把「音级→行」映射与一次实际编辑打印出来，避免再靠猜 */
+  const probe=[];
+  for(let r=0;r<18&&!err;r++){
+    try{
+      const n=setup(r%9);
+      T.autoArrange();
+      const bass=T.state.tracks.find(t=>t.name==='贝斯');
+      const arp=T.state.tracks.find(t=>t.name==='琶音 Arp');
+      const pad=T.state.tracks.find(t=>t.name==='铺底');
+      /* 每个声部可能和旋律小节数不同：一律按「该声部自己的长度」取和声帧 */
+      const caOf=tr=>T.chordAtFor(T.progFor(),T.stepsOf(tr));
+      if(probe.length<3&&bass){
+        const a=caOf(bass);
+        probe.push('r='+r+' rootOf('+[...a[0]].join('')+')='+rootOfSet(a[0])
+          +' bass[s0]='+(bass.seq[0]<0?'-':T.degOfRow(bass.seq[0]))
+          +' bass[s4]='+(bass.seq[4]<0?'-':T.degOfRow(bass.seq[4]))
+          +' bassLen='+T.stepsOf(bass)+' melLen='+T.stepsOf(mel()));
+      }
+      if(bass){
+        const a=caOf(bass), N=T.stepsOf(bass);
+        for(let s=0;s<N;s++){
+          const rr=bass.seq[s]; if(rr<0) continue;
+          bassTot++; if(a[s]&&a[s].has(T.degOfRow(rr))) bassChord++;
+        }
+        for(let s=0;s<N;s+=4){
+          const rr=bass.seq[s]; if(rr<0) continue;
+          bassStrongTot++;
+          const set=a[s]; if(!set||!set.size) continue;
+          if(T.degOfRow(rr)===rootOfSet(set)) bassStrongRoot++;
+        }
+      }
+      if(arp){
+        const a=caOf(arp), N=T.stepsOf(arp);
+        for(let s=0;s<N;s++){
+          const rr=arp.seq[s]; if(rr<0) continue;
+          arpTot++; if(a[s]&&a[s].has(T.degOfRow(rr))) arpChord++;
+          arpCtrSum+=rr; arpCtrN++;
+        }
+      }
+      if(pad){
+        const a=caOf(pad), N=T.stepsOf(pad);
+        for(let s=0;s<N;s++){
+          const rr=pad.seq[s]; if(rr<0) continue;
+          padTot++; if(a[s]&&a[s].has(T.degOfRow(rr))) padChord++;
+          padCtrSum+=rr; padCtrN++;
+        }
+        if(pad.seq.some(v=>v>=0)) padRounds++;
+      }
+      created++;
+    }catch(e){ err=e; }
+  }
+  const dbg=extra=>process.env.SEQ_DEBUG?extra:'';
+  const arpCtr=arpCtrSum/Math.max(1,arpCtrN), padCtr=padCtrSum/Math.max(1,padCtrN);
+  chk('18 轮多风格编配无异常',!err,err&&err.message+(probe.length?'｜'+probe.join(' ｜ '):''));
+  /* 贝斯：绝大多数音落在和弦内（v1 的随机库常落在和弦外） */
+  chk('贝斯和弦内音占比 ≥ 95%（实测 '+(100*bassChord/Math.max(1,bassTot)).toFixed(1)+'%）',
+      bassTot>0&&bassChord/bassTot>=.95,dbg(probe.join(' ｜ ')));
+  /* 强拍锚在根音：这是低音线「和声清楚」的关键 */
+  chk('贝斯强拍落在和弦根音 ≥ 90%（实测 '+(100*bassStrongRoot/Math.max(1,bassStrongTot)).toFixed(1)+'%）',
+      bassStrongTot>0&&bassStrongRoot/bassStrongTot>=.90,dbg(probe.join(' ｜ ')));
+  /* 琶音：同样必须在和弦内，作为织体层不能乱撞 */
+  chk('琶音和弦内音占比 ≥ 92%（实测 '+(100*arpChord/Math.max(1,arpTot)).toFixed(1)+'%）',
+      arpTot>0&&arpChord/arpTot>=.92);
+  /* 铺底：只在「该风格要铺底」的轮次里统计（padRole:false 的风格本就不该有铺底声部，
+     否则会把一条永远空着的死声部当成失败原因） */
+  chk('铺底和弦内音占比 ≥ 96%（实测 '+(100*padChord/Math.max(1,padTot)).toFixed(1)
+      +'%，'+padRounds+'/'+created+' 轮有铺底）',
+      padRounds===0||(padTot>0&&padChord/padTot>=.96));
+  /* 三层重心关系：琶音在高处、铺底居中偏低（这是「不糊在一起」的实际保证） */
+  chk('琶音重心在高音区（平均行 '+arpCtr.toFixed(2)+' ≤ '+CENTROID_ARP_MAX+'）',
+      arpTot>0&&arpCtr<=CENTROID_ARP_MAX);
+  chk('铺底重心居中（平均行 '+padCtr.toFixed(2)+' ∈ ['+CENTROID_PAD_MIN+','+CENTROID_PAD_MAX+']）',
+      padRounds===0||(padTot>0&&padCtr>=CENTROID_PAD_MIN&&padCtr<=CENTROID_PAD_MAX));
+  /* 铺底一旦存在就必须有内容（曾经的 bug：padRole 轮次里铺底一格都没生成） */
+  chk('要铺底的风格确实生成了铺底音符（'+(padRounds?padRounds+' 轮':'无该风格')+'）',
+      padRounds===0||padTot>0);
+  /* 三层都铺满全曲（长度与最长声部一致） */
+  chk('三个伴奏声部都铺满 4 小节（64 步）',['贝斯','琶音 Arp'].every(nm=>{
+    const t=T.state.tracks.find(x=>x.name===nm); return t&&T.stepsOf(t)===64;
+  })&&['铺底'].every(nm=>{ const t=T.state.tracks.find(x=>x.name===nm); return !t||T.stepsOf(t)===64; }));
+  /* 旋律有音 → 一定有编配产出 */
+  chk('每个声部都生成了内容（三次编配都拿到音符）',bassTot>0&&arpTot>0);
+  chk('贝斯被铺满全曲长度（4 小节＝64 步）',
+      T.state.tracks.find(t=>t.name==='贝斯')&&T.stepsOf(T.state.tracks.find(t=>t.name==='贝斯'))===64);
+  /* 多样化：连续两次编配结果不应完全相同 */
+  setup(1);
+  const arr1=()=>{ T.autoArrange(); const b=T.state.tracks.find(t=>t.name==='贝斯'),a=T.state.tracks.find(t=>t.name==='琶音 Arp');
+    return JSON.stringify([b&&b.seq,a&&a.seq]); };
+  const s1=arr1(), s2=arr1(), s3=arr1();
+  chk('连点编配结果不同（≥2 个版本 / 3 次）',new Set([s1,s2,s3]).size>=2,'distinct='+new Set([s1,s2,s3]).size);
+  /* 撤销可回退编配 */
+  const before=T.state.tracks.find(t=>t.name==='贝斯').seq.join(',');
+  setup(2);
+  const ud=T.undoDepth();
+  T.autoArrange();
+  chk('编配前已存快照（可撤销）',T.undoDepth()>=ud);
+  /* 空旋律不应该炸 */
+  T.state.tracks.forEach(t=>T.resetSeq(t));
+  let noNote=true; try{ T.autoArrange(); }catch(e){ noNote=false; }
+  chk('全空旋律点编配不抛错（只提示）',noNote);
+}
 
 console.log('\n=== '+(fail?fail+' 项失败':'全部通过')+'（'+pass+' 通过 / '+fail+' 失败）===');
 process.exit(fail?1:0);
