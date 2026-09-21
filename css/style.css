@@ -64,6 +64,14 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;heigh
   background:var(--ink);box-shadow:0 1px 4px rgba(0,0,0,.3)}
 input[type=range]:hover::-webkit-slider-thumb{transform:scale(1.15)}
 .sep{width:1px;align-self:stretch;background:rgba(20,20,20,.12);margin:2px 3px}
+/* ⚙ 更多设置（仅手机端显示）：收起时顶栏一行放下「播放 · BPM · ⚙」 */
+.more-btn{
+  display:none;width:40px;height:40px;border-radius:50%;flex:none;cursor:pointer;
+  font:inherit;font-size:16px;line-height:1;color:var(--ink);
+  background:transparent;border:1.5px solid rgba(20,20,20,.22);place-items:center;transition:.14s;
+}
+.more-btn:hover{background:rgba(20,20,20,.07)}
+.transport.open .more-btn{background:var(--ink);border-color:var(--ink);color:#fff}
 
 #toast{
   position:fixed;left:50%;top:16px;transform:translate(-50%,-14px);z-index:60;
@@ -200,17 +208,33 @@ input[type=range]:hover::-webkit-slider-thumb{transform:scale(1.15)}
 .tc-name:focus{border-bottom-color:currentColor}
 .tc-sub{font-size:11.5px;color:color-mix(in srgb,var(--tci) 55%,transparent);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:0 1 auto}
 .spacer{flex:1}
-.tc-btns{display:flex;gap:6px;flex:none}
+/* 头部按钮（DAW 式编排）：混音 M/S · 生成 ✨🎲 · 排序 ↑↓ · 危险 ⌫✕ 四组，组间细分隔线 */
+.tc-btns{display:flex;align-items:center;gap:9px;flex:none}
+.tb-group{display:flex;gap:6px;align-items:center}
+.tb-sep{width:1px;height:18px;flex:none;background:color-mix(in srgb,var(--tci) 22%,transparent)}
 .icon-btn{
   width:32px;height:32px;border-radius:50%;border:none;cursor:pointer;padding:0;
   font:inherit;font-size:12px;font-weight:700;line-height:1;
   background:var(--tci);color:var(--tcb);
-  display:grid;place-items:center;transition:transform .13s,filter .13s,opacity .13s;
+  display:grid;place-items:center;transition:transform .13s,filter .13s,opacity .13s,background .13s,color .13s;
 }
 .icon-btn:hover{transform:scale(1.1)}
 .icon-btn:active{transform:scale(.94)}
-.icon-btn.off{opacity:.32}
-.tc-meta{display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin-bottom:14px}
+/* 次级操作（排序 / 清除 / 删除）：描边幽灵款，与主操作拉开层级 */
+.icon-btn.ghost{background:transparent;border:1.5px solid color-mix(in srgb,var(--tci) 32%,transparent);color:var(--tci)}
+.icon-btn.ghost:hover{background:color-mix(in srgb,var(--tci) 14%,transparent)}
+/* 危险操作：悬停染红 */
+.icon-btn.danger:hover{background:#e05548;border-color:transparent;color:#fff}
+/* 状态点亮：M 静音＝琥珀，S 独奏＝蓝（DAW 惯例色） */
+.icon-btn.m-on{background:#e89b3c;color:#fff;box-shadow:0 0 0 2px color-mix(in srgb,#e89b3c 35%,transparent)}
+.icon-btn.s-on{background:#3c9de8;color:#fff;box-shadow:0 0 0 2px color-mix(in srgb,#3c9de8 35%,transparent)}
+/* 参数行（DAW 式分区）：编排 · 音色 · 混音 · 效果 · 和声，组间距大于组内间距 */
+.tc-meta{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;margin-bottom:14px}
+.tm-group{display:flex;flex-wrap:wrap;gap:7px;align-items:center;min-width:0}
+.tm-lb{
+  font-size:10px;font-weight:750;letter-spacing:1.2px;text-transform:uppercase;
+  color:color-mix(in srgb,var(--tci) 42%,transparent);margin-right:2px;user-select:none;
+}
 .chip{
   display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:5px 12px;
   font-size:11.5px;font-weight:600;letter-spacing:.2px;
@@ -365,6 +389,8 @@ footer summary::marker{color:var(--muted)}
   .tc-name{flex:1 1 auto;width:auto;max-width:none;min-width:0;font-size:18px}
   .spacer{display:none}
   .tc-btns{margin-left:auto;flex-wrap:wrap;justify-content:flex-end}
+  .tm-lb{display:none}                           /* 窄屏收起分区微标签，控件自身带说明 */
+  .tc-meta{gap:8px 12px}
   .icon-btn{width:34px;height:34px}
   .crib{width:22px;height:22px;font-size:12px}
   .tctl input[type=range]{width:70px}
@@ -372,13 +398,18 @@ footer summary::marker{color:var(--muted)}
   input[type=range]{height:24px}
   input[type=range]::-webkit-slider-thumb{width:18px;height:18px;margin-top:-7px}   /* 触屏拇指更大的滑块 */
 }
-/* 手机：顶栏收成单行横滑（高度恒定，内容左右滑动可达）；
+/* 手机：顶栏 = 常驻一行「▶ 播放 · BPM · ⚙」，其余控件收进 ⚙ 展开面板（分组换行，不再横向挤压）；
    步进区 / 鼓网格本就支持横向滚动——保留触控尺寸，不再为塞进屏幕而缩小到难按 */
 @media (max-width:560px){
   .bar{padding:8px 0 10px}
   .transport{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;gap:8px;padding:10px 12px}
   .transport::-webkit-scrollbar{display:none}
-  .tgroup{flex-wrap:nowrap}
+  .tgroup{flex:0 0 auto;flex-wrap:nowrap}        /* 组不许被压缩——此前按钮互相重叠的根因 */
+  .more-btn{display:grid}
+  .tgroup.aux{display:none}
+  .transport.open{flex-wrap:wrap;overflow-x:visible;row-gap:12px}
+  .transport.open .tgroup.aux{display:flex}
+  .transport.open .tgroup{flex:0 0 100%;flex-wrap:wrap}  /* 面板内每组独占一行并允许内部换行（0 0 auto 会按 max-content 撑破屏幕） */
   .tgroup.actions{margin-left:0}
   .sep{display:none}
   .btn{padding:10px 14px;min-height:40px}
@@ -397,17 +428,20 @@ footer summary::marker{color:var(--muted)}
   .dnote{margin-left:54px}
   .chip{padding:8px 12px;font-size:12px}
   .seg-b{padding:6px 9px}
+  .icon-btn{width:33px;height:33px;font-size:12.5px}
+  .tb-sep{display:none}                          /* 窄屏一行放不下四组＋分隔线：隐藏分隔线靠组间距分区 */
+  .tc-btns{gap:10px}
   .cc-btn{padding:9px 14px}
   .cc-inst{padding:8px 12px;max-width:42vw}
   .cc-ctl{flex:1 1 100%}
+  .cc-ctl .chip{padding:7px 10px}
+  .cc-ctl input[type=range]{width:56px}
   .cc-fxwrap{flex:1 1 100%}
   .cc-prog{flex:1 1 100%;max-width:100%;padding:8px 12px}
   .cc-prow .cur{display:none}                      /* 窄屏省地方：当前走向在下拉里已高亮 */
   .crib{width:26px;height:26px;font-size:13px}
   .cc-add{width:52px}
   .addchip{padding:13px 20px}
-  .icon-btn{width:36px;height:36px;font-size:13px}
-  .tc-btns{gap:5px}                              /* 36×8 + 5×7 = 323 < 332，按钮组一行放得下 */
   .cseg{flex-basis:110px;min-width:110px;padding:9px 12px 10px}
   .cseg .cname{font-size:20px}
   footer{padding:14px 14px;border-radius:20px}

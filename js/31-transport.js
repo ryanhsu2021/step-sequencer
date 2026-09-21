@@ -57,6 +57,16 @@ function stop(){
 }
 const togglePlay=()=>isPlaying?stop():start();
 playBtn.addEventListener('click',()=>{togglePlay();playBtn.blur();});
+/* ⚙ 更多设置面板（手机端）：展开 / 收起顶栏其余控件组 */
+const transportBar=$('transport'), moreBtn=$('moreBtn');
+if(transportBar&&moreBtn){
+  moreBtn.addEventListener('click',()=>{
+    const open=transportBar.classList.toggle('open');
+    moreBtn.textContent=open?'✕':'⚙';
+    moreBtn.setAttribute('aria-expanded',String(open));
+    moreBtn.title=open?'收起设置面板':'更多设置（风格 / 混音 / 调性 / 导出 / 操作）';
+  });
+}
 function draw(){
   if(isPlaying&&audioCtx){
     const now=audioCtx.currentTime;

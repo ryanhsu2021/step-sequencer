@@ -365,23 +365,34 @@ function buildCard(tr,i){
   const card={el,kind:tr.kind,knobs:[],nums:[],dc:new Map()};
   view.cards.set(tr.id,card);
 
-  /* ---- 头部：编号 / 名称 / 说明 / 圆形按钮 ---- */
+  /* ---- 头部：编号 / 名称 / 说明 / 圆形按钮（DAW 式分区：混音 · 生成 · 排序 · 危险） ---- */
   const head=document.createElement('div'); head.className='tc-head';
   head.innerHTML=
     '<span class="tc-num">'+(i+1)+'</span>'+
     '<input class="tc-name" maxlength="14" spellcheck="false">'+
     '<span class="tc-sub"></span><span class="spacer"></span>'+
     '<div class="tc-btns">'+
-      '<button class="icon-btn" data-act="up" title="上移一位">↑</button>'+
-      '<button class="icon-btn" data-act="down" title="下移一位">↓</button>'+
-      (tr.kind==='inst'
-        ?'<button class="icon-btn" data-act="opt" title="✨ 和声重排：按当前风格 + 和弦进行轨约束重排本声部">✨</button>'+
-         '<button class="icon-btn" data-act="rand" title="按当前风格随机生成一条全新旋律">🎲</button>'
-        :'<button class="icon-btn" data-act="rand" title="按当前风格随机生成一条律动">🎲</button>')+
-      '<button class="icon-btn'+(tr.mute?' off':'')+'" data-act="mute" title="静音">M</button>'+
-      '<button class="icon-btn'+(tr.solo?' off':'')+'" data-act="solo" title="独奏">S</button>'+
-      '<button class="icon-btn" data-act="clear" title="清空本声部">⌫</button>'+
-      '<button class="icon-btn" data-act="del" title="删除声部">✕</button>'+
+      '<span class="tb-group">'+
+        '<button class="icon-btn'+(tr.mute?' m-on':'')+'" data-act="mute" title="静音（点亮＝已静音）">M</button>'+
+        '<button class="icon-btn'+(tr.solo?' s-on':'')+'" data-act="solo" title="独奏（点亮＝独奏中）">S</button>'+
+      '</span>'+
+      '<span class="tb-sep"></span>'+
+      '<span class="tb-group">'+
+        (tr.kind==='inst'
+          ?'<button class="icon-btn" data-act="opt" title="✨ 和声重排：按当前风格 + 和弦进行轨约束重排本声部">✨</button>'+
+           '<button class="icon-btn" data-act="rand" title="按当前风格随机生成一条全新旋律">🎲</button>'
+          :'<button class="icon-btn" data-act="rand" title="按当前风格随机生成一条律动">🎲</button>')+
+      '</span>'+
+      '<span class="tb-sep"></span>'+
+      '<span class="tb-group">'+
+        '<button class="icon-btn ghost" data-act="up" title="上移一位">↑</button>'+
+        '<button class="icon-btn ghost" data-act="down" title="下移一位">↓</button>'+
+      '</span>'+
+      '<span class="tb-sep"></span>'+
+      '<span class="tb-group">'+
+        '<button class="icon-btn ghost danger" data-act="clear" title="清空本声部">⌫</button>'+
+        '<button class="icon-btn ghost danger" data-act="del" title="删除声部">✕</button>'+
+      '</span>'+
     '</div>';
   const name=head.querySelector('.tc-name'); name.value=tr.name;
   name.addEventListener('input',()=>{tr.name=name.value||'声部';head.querySelector('.tc-sub').textContent=trackDesc(tr);save();});
@@ -397,13 +408,20 @@ function buildCard(tr,i){
   }));
   el.appendChild(head);
 
-  /* ---- 参数行 ---- */
+  /* ---- 参数行（DAW 式分区：编排 · 鼓组/和声 · 音色 · 混音 · 效果） ---- */
   const meta=document.createElement('div'); meta.className='tc-meta';
-  meta.appendChild(chipSeg('小节',[1,2,3,4,8],barsOf(tr),n=>setBars(tr,n)));
-  meta.appendChild(chipRate(tr));
+  const tmGroup=(lb)=>{
+    const g=document.createElement('span'); g.className='tm-group';
+    if(lb){ const t=document.createElement('span'); t.className='tm-lb'; t.textContent=lb; g.appendChild(t); }
+    meta.appendChild(g); return g;
+  };
+  const gSeq=tmGroup('编排');
+  gSeq.appendChild(chipSeg('小节',[1,2,3,4,8],barsOf(tr),n=>setBars(tr,n)));
+  gSeq.appendChild(chipRate(tr));
   if(tr.kind==='drum'){
     const want=(SP_.drums||[]);
     let alt=0;
+    const gPreset=tmGroup('鼓组');
     styleRankedDrums().forEach(p=>{
       const star=want.indexOf(p.id)>=0||p.id==='none'||tr.drum===p.id;
       const chip=document.createElement('button');
@@ -416,7 +434,7 @@ function buildCard(tr,i){
         refreshDrumCells(tr); refreshSub(tr); save();
         toast('已套用「'+p.name+'」'+(barsOf(tr)>1?'（已铺满 '+barsOf(tr)+' 小节）':'')+'——网格可直接继续修改');
       });
-      meta.appendChild(chip);
+      gPreset.appendChild(chip);
     });
     if(alt){
       const more=document.createElement('button');
@@ -426,13 +444,15 @@ function buildCard(tr,i){
         const open=meta.classList.toggle('showall');
         more.textContent=open?'收起 ▴':'更多 ▾';
       });
-      meta.appendChild(more);
+      gPreset.appendChild(more);
     }
-    meta.appendChild(chipFx(tr));
-    meta.appendChild(chipRange('强度',0,100,Math.round((tr.fxMix==null?1:tr.fxMix)*100),v=>v,x=>{tr.fxMix=x/100;save();}));
+    const gFx=tmGroup('效果');
+    gFx.appendChild(chipFx(tr));
+    gFx.appendChild(chipRange('强度',0,100,Math.round((tr.fxMix==null?1:tr.fxMix)*100),v=>v,x=>{tr.fxMix=x/100;save();}));
   }else{
     /* 「⟳ 对齐和弦」：一次性触发——点一下把本声部现有音符吸附到当前和弦进行轨；
        没有持久状态，和弦轨之后再变想重新对齐就再点一次。✨/🎼 恒用和弦轨做和声 */
+    const gHar=tmGroup('和声');
     const fol=document.createElement('button');
     fol.type='button';
     fol.className='chip btn-like';
@@ -443,16 +463,20 @@ function buildCard(tr,i){
       save();
       toast(changed?('「'+tr.name+'」已吸附到和弦进行轨（音高对齐）'):('「'+tr.name+'」的音符都已落在和弦内，无需吸附'));
     });
+    gHar.appendChild(fol);
+    const gVoice=tmGroup('音色');
     const sel=document.createElement('select'); fillInstSelect(sel,tr.inst);
     sel.addEventListener('change',()=>{tr.inst=sel.value;refreshSub(tr);save();});
     const oct=document.createElement('select');
     [-2,-1,0,1,2].forEach(o=>oct.add(new Option(o===0?'原调':(o>0?'+'+o:o)+' 八度',o)));
     oct.value=tr.oct;
     oct.addEventListener('change',()=>{tr.oct=+oct.value;refreshSub(tr);refreshAll();save();});
-    meta.append(fol,sel,oct,
-      chipRange('音量',0,100,Math.round(tr.vol*100),v=>v,x=>{tr.vol=x/100;save();}),
-      chipFx(tr),
-      chipRange('强度',0,100,Math.round((tr.fxMix==null?1:tr.fxMix)*100),v=>v,x=>{tr.fxMix=x/100;save();}));
+    gVoice.append(sel,oct);
+    const gMix=tmGroup('混音');
+    gMix.appendChild(chipRange('音量',0,100,Math.round(tr.vol*100),v=>v,x=>{tr.vol=x/100;save();}));
+    const gFx=tmGroup('效果');
+    gFx.appendChild(chipFx(tr));
+    gFx.appendChild(chipRange('强度',0,100,Math.round((tr.fxMix==null?1:tr.fxMix)*100),v=>v,x=>{tr.fxMix=x/100;save();}));
   }
   el.appendChild(meta);
 
