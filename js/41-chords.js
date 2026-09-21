@@ -105,6 +105,49 @@ function setProg(p,edited){
   state.prog=p; state.progEdited=!!edited; chordEdit=null;
   fitProg(); renderChord(); save();
 }
+/* ---- 常用进行预设：把一条「级数走向」铺满当前和弦轨的拍数 ----
+   和弦比拍数还多 → 只取前 N 个（每个至少 1 拍）；否则平均分配、余数补给前面；相邻同根合并 */
+function planToChords(plan){
+  const total=progBeats(), L=scLen();
+  let p=(Array.isArray(plan)?plan:[]).map(d=>((((d|0)%L)+L)%L));
+  if(!p.length) p=[0];
+  if(p.length>total) p=p.slice(0,total);
+  const segs=[]; let left=total;
+  p.forEach((d,i)=>{
+    const remain=p.length-i;
+    const b=Math.max(1,Math.round(left/remain));
+    segs.push({root:d,seventh:!!SP_.seventh,beats:b});
+    left-=b;
+  });
+  while(left>0){ segs[segs.length-1].beats++; left--; }
+  const out=[];
+  for(const c of segs){ const q=out[out.length-1]; if(q&&q.root===c.root) q.beats+=c.beats; else out.push(c); }
+  return out.map(c=>mkChord(c.root,c.beats,c.seventh));
+}
+/* 应用一条预设进行（整条替换，标记为手动），并试听新进行的第一个和弦 */
+function setProgPlan(plan){
+  const ch=planToChords(plan);
+  if(!ch.length) return 0;
+  setProg(ch,true);
+  audChord(ch[0]);
+  return ch.length;
+}
+/* 进行指纹：去掉相邻同根后的级数链，用于下拉回显「现在选的是哪一条」 */
+function progKeyOf(p){
+  const L=scLen(), out=[];
+  (Array.isArray(p)?p:[]).forEach(c=>{
+    const d=((((c&&c.root)||0)%L)+L)%L;
+    if(out[out.length-1]!==d) out.push(d);
+  });
+  return out.join('-');
+}
+/* 级数链 → 罗马数字（"I – V – VI – IV"），用于预设名与「当前」回显 */
+function planRoman(p){
+  const L=scLen();
+  return (Array.isArray(p)?p:[])
+    .map(c=>ROMAN[((((c&&c.root)||0)%L)+L)%L]||'')
+    .join(' – ');
+}
 /* 「⟳ 对齐和弦」触发：把该声部现有音符一次性吸附到最近的和弦音（鼓除外；手动素材 userSeq 同步挪，
    ✨ 不会把旧音变回来）。没有持久跟随状态——和弦轨之后再变，需要再点一次才重新对齐 */
 function reharmonizeTrack(tr){

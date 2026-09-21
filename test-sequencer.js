@@ -26,6 +26,8 @@ class El{
   set innerHTML(v){ this._inner=v; this.children=parseHTML(v); this.options=[]; }
   get innerHTML(){ return this._inner; }
   appendChild(c){ this.children.push(c); return c; }
+  insertBefore(c,ref){ const i=ref?this.children.indexOf(ref):-1; if(i<0) this.children.push(c); else this.children.splice(i,0,c); return c; }
+  removeChild(c){ const i=this.children.indexOf(c); if(i>=0) this.children.splice(i,1); return c; }
   append(...cs){ cs.forEach(c=>this.children.push(c)); }
   addEventListener(t,f){ (this._handlers[t]=this._handlers[t]||[]).push(f); }
   removeEventListener(){}
@@ -109,7 +111,8 @@ const expose=`
   setProgBars,progBeats,makeTrack,progTiled,randomSameStyle,reharmonizeTrack,
   velOf,pushUndo,undo,undoDepth:()=>undoStack.length,
   DELAY_PRESETS,REV_PRESETS,setTrackFx,setReverb,revGetter:()=>revPreset,trackFx:t=>t.fx,setRevMix:v=>{revMix=v;},getRevMix:()=>revMix,
-  setChordFx,applyChordFx,chordFxGetter:()=>chordFx,getChordFxMix:()=>chordFxMix,setChordFxMix:v=>{chordFxMix=v;},chordBusId:CHORD_BUS_ID};`;
+  setChordFx,applyChordFx,chordFxGetter:()=>chordFx,getChordFxMix:()=>chordFxMix,setChordFxMix:v=>{chordFxMix=v;},chordBusId:CHORD_BUS_ID,
+  planToChords,setProgPlan,progKeyOf,planRoman,modeIdx:()=>modeIdx,PLAN_LIB,PROG_PLANS,STYLE,ROMAN};`;
 try{ vm.runInContext(js+expose,sandbox); }catch(e){ console.log('LOAD_FAIL:',e.stack); process.exit(1); }
 const T=sandbox.__T;
 let pass=0,fail=0;
@@ -484,6 +487,56 @@ chk('旧档（无 chordFx 字段）读取安全',(()=>{
 })());
 chk('和弦轨与声部延时互不干扰（声部 fx 不被覆盖）',
   T.state.tracks.every(t=>t.fx!=='space'||true)&&T.chordFxGetter()==='off');
+
+console.log('== 15. 常用和弦进行预设：铺满 / 截断 / 合并 / 指纹 / 应用 ==');
+T.setStyle(1);
+const plan0=T.PLAN_LIB()[0];
+const chs0=T.planToChords(plan0);
+const sum0=chs0.reduce((a,c)=>a+c.beats,0);
+chk('planToChords：拍数正好铺满和弦轨（'+sum0+'/'+T.progBeats()+'）',sum0===T.progBeats());
+chk('planToChords：级数链与预设一致（'+plan0.join('-')+'）',chs0.map(c=>c.root).join('-')===plan0.join('-'),
+    chs0.map(c=>c.root).join('-'));
+chk('planToChords：每段至少 1 拍',chs0.every(c=>c.beats>=1));
+
+T.setProgBars(1);                                    // 1 小节 = 4 拍
+const cut=T.planToChords([0,1,2,3,4,5,6]);
+chk('和弦比拍数多时截断到拍数（'+cut.length+' 个 · 各 '+cut.map(c=>c.beats).join(',')+' 拍）',
+    cut.length===T.progBeats()&&cut.every(c=>c.beats===1));
+
+const merged=T.planToChords([0,0,4,4]);
+chk('相邻同根自动合并（0-0-4-4 → 2 段）',merged.length===2&&merged[0].root===0&&merged[1].root===4,
+    merged.map(c=>c.root+':'+c.beats).join(' '));
+
+const L0=T.scLen();
+const wrapp=T.planToChords([L0,L0+1]);
+chk('级数越界自动取模（'+L0+','+(L0+1)+' → 0,1）',wrapp[0].root===0&&wrapp[1].root===1);
+
+chk('progKeyOf：去掉相邻重复（0-0-4 → "0-4"）',T.progKeyOf([{root:0},{root:0},{root:4}])==='0-4');
+chk('progKeyOf：越界级数取模',T.progKeyOf([{root:L0+2}])==='2');
+
+T.setProgBars(2);
+const nApply=T.setProgPlan([0,4,5,3]);
+chk('setProgPlan：返回 '+nApply+' 个和弦',T.state.prog.length===nApply&&nApply===4);
+chk('setProgPlan：整条替换 & 标记为手动',T.state.progEdited===true&&T.state.prog.map(c=>c.root).join('-')==='0-4-5-3',
+    T.state.prog.map(c=>c.root).join('-'));
+chk('setProgPlan：拍数铺满和弦轨',T.state.prog.reduce((a,c)=>a+c.beats,0)===T.progBeats());
+chk('应用后指纹与预设一致（下拉可回显）',T.progKeyOf(T.state.prog)==='0-4-5-3');
+chk('planRoman：0-4-5-3 → I – V – VI – IV',
+    T.planRoman([{root:0},{root:4},{root:5},{root:3}]).replace(/\s/g,'')==='I–V–VI–IV',
+    T.planRoman([{root:0},{root:4},{root:5},{root:3}]));
+
+let planOK=true, planDetail='';
+Object.keys(T.PROG_PLANS).forEach(k=>{
+  T.setProgBars(1);
+  T.PROG_PLANS[k].forEach(pl=>{
+    const c=T.planToChords(pl), s=c.reduce((a,x)=>a+x.beats,0);
+    if(!c.length||s!==T.progBeats()){ planOK=false; planDetail='plan '+pl.join('-')+' sum='+s; }
+  });
+});
+chk('全部调式预设都能铺满和弦轨',planOK,planDetail);
+
+const edge=T.planToChords([0,1,2,3]);
+chk('和弦数＝拍数：每个正好 1 拍',edge.length===4&&edge.every(c=>c.beats===1));
 
 console.log('\n=== '+(fail?fail+' 项失败':'全部通过')+'（'+pass+' 通过 / '+fail+' 失败）===');
 process.exit(fail?1:0);

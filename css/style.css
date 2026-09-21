@@ -103,6 +103,24 @@ input[type=range]:hover::-webkit-slider-thumb{transform:scale(1.15)}
 .cc-ctl .seg-b.on{background:#fff;color:#141414}
 .cc-ctl input[type=range]::-webkit-slider-runnable-track{background:rgba(255,255,255,.26)}
 .cc-ctl input[type=range]::-webkit-slider-thumb{background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+/* 延时预设 + Mix 滑杆：并排成组（同墨色底配色） */
+.cc-fxwrap{display:inline-flex;align-items:center;gap:7px;flex:none;flex-wrap:wrap}
+.cc-fxwrap .chip{background:rgba(255,255,255,.08);color:#fff}
+.cc-fxwrap input[type=range]::-webkit-slider-runnable-track{background:rgba(255,255,255,.26)}
+.cc-fxwrap input[type=range]::-webkit-slider-thumb{background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+/* 常用和弦进行预设行（和弦方块下方） */
+.cc-prow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px}
+.cc-prow .lb{font-size:11.5px;font-weight:650;color:rgba(255,255,255,.55);flex:none}
+.cc-prog{
+  flex:0 1 auto;min-width:0;font:inherit;font-size:12px;font-weight:600;color:#141414;
+  background:rgba(255,255,255,.92);border:1.5px solid rgba(255,255,255,.28);
+  border-radius:999px;padding:6px 10px;outline:none;cursor:pointer;transition:.14s;max-width:min(320px,58vw);
+}
+.cc-prog:hover{background:#fff;border-color:#fff}
+.cc-prow .cur{
+  font-size:11px;font-family:var(--mono);color:rgba(255,255,255,.5);
+  flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
 .cc-bars{display:flex;flex-wrap:wrap;gap:8px;align-items:stretch}
 .cseg{
   flex:1 1 104px;min-width:104px;text-align:left;cursor:pointer;position:relative;
@@ -338,12 +356,15 @@ footer summary::marker{color:var(--muted)}
   .transport{border-radius:20px;padding:10px 12px;gap:8px 10px}
   .tgroup{gap:7px}
   .btn{padding:9px 14px}
-  .cc-btns{margin-left:0;width:100%}
+  .cc-btns{margin-left:0;width:100%;flex-wrap:wrap}
   .cseg{flex-basis:96px;min-width:96px}
   .tc-sub{display:none}
   .tcard{padding:14px 14px 12px}
   .ccard{padding:14px 14px 12px}
-  .tc-name{font-size:18px}
+  .tc-head{flex-wrap:wrap;gap:8px 9px}          /* 头部换行：名称一行、按钮组一行，避免撑出横向滚动条 */
+  .tc-name{flex:1 1 auto;width:auto;max-width:none;min-width:0;font-size:18px}
+  .spacer{display:none}
+  .tc-btns{margin-left:auto;flex-wrap:wrap;justify-content:flex-end}
   .icon-btn{width:34px;height:34px}
   .crib{width:22px;height:22px;font-size:12px}
   .tctl input[type=range]{width:70px}
@@ -379,10 +400,14 @@ footer summary::marker{color:var(--muted)}
   .cc-btn{padding:9px 14px}
   .cc-inst{padding:8px 12px;max-width:42vw}
   .cc-ctl{flex:1 1 100%}
+  .cc-fxwrap{flex:1 1 100%}
+  .cc-prog{flex:1 1 100%;max-width:100%;padding:8px 12px}
+  .cc-prow .cur{display:none}                      /* 窄屏省地方：当前走向在下拉里已高亮 */
   .crib{width:26px;height:26px;font-size:13px}
   .cc-add{width:52px}
   .addchip{padding:13px 20px}
-  .icon-btn{width:38px;height:38px;font-size:13px}
+  .icon-btn{width:36px;height:36px;font-size:13px}
+  .tc-btns{gap:5px}                              /* 36×8 + 5×7 = 323 < 332，按钮组一行放得下 */
   .cseg{flex-basis:110px;min-width:110px;padding:9px 12px 10px}
   .cseg .cname{font-size:20px}
   footer{padding:14px 14px;border-radius:20px}

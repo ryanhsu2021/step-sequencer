@@ -83,6 +83,48 @@ function segOfStep(g){
   for(let i=0;i<p.length;i++){ acc+=p[i].beats*4; if(g<acc) return i; }
   return p.length-1;
 }
+/* ---- 常用和弦进行预设：当前风格的进行库 + 当前调式的常见走向 ----
+   下拉即整条替换当前和弦（拍数自动铺满和弦轨长度），并即时试听 */
+function buildProgPresetRow(){
+  const L=scLen();
+  const groups=[];
+  if(SP_.prog&&SP_.prog.length) groups.push({label:STYLE().emoji+' '+STYLE().name+' 常用进行',plans:SP_.prog});
+  if(PROG_PLANS[modeIdx]) groups.push({label:'🎚 '+MODES[modeIdx].name+' 常见走向',plans:PROG_PLANS[modeIdx]});
+  if(!groups.length) return null;
+  const cur=progKeyOf(state.prog), seen=new Set();
+  const bar=document.createElement('div'); bar.className='cc-prow';
+  const lb=document.createElement('span'); lb.className='lb'; lb.textContent='常用和弦进行';
+  const sel=document.createElement('select'); sel.className='cc-prog';
+  sel.title='选一条常用进行：整条替换当前和弦轨（自动铺满拍数），点一下即可试听';
+  groups.forEach(g=>{
+    const og=document.createElement('optgroup'); og.label=g.label;
+    g.plans.forEach(pl=>{
+      const norm=pl.map(d=>((((d|0)%L)+L)%L));
+      const key=norm.filter((d,i)=>i===0||norm[i-1]!==d).join('-');   // 与 progKeyOf 同一套指纹
+      if(seen.has(key)) return;                      // 风格库与调式库重复的走向只留一条
+      seen.add(key);
+      const o=new Option(norm.map(d=>ROMAN[d]||'').join(' – '),key);
+      o.title=g.label+'：'+norm.map(d=>ROMAN[d]||'').join(' – ');
+      og.appendChild(o);
+    });
+    if(og.children.length) sel.appendChild(og);
+  });
+  const custom=new Option('自定义（手动编辑 / 随机生成）','');
+  custom.title='当前进行不在这份列表里——点方块换和弦，或用 🎲 / ⤵ 生成';
+  sel.appendChild(custom);
+  sel.value=seen.has(cur)?cur:'';                    // 命中就显示那一条，否则显示「自定义」
+  sel.addEventListener('change',()=>{
+    if(!sel.value) return;
+    const n=setProgPlan(sel.value.split('-').map(Number));
+    toast('和弦进行 → '+sel.options[sel.selectedIndex].text+'（'+n+' 个和弦 · '+progBeats()+' 拍）');
+  });
+  const info=document.createElement('span'); info.className='cur';
+  const k=progKeyOf(state.prog);
+  info.textContent='当前：'+(k?planRoman(state.prog):'—');
+  info.title='当前和弦轨的级数走向（点方块换和弦后会跟着变）';
+  bar.append(lb,sel,info);
+  return bar;
+}
 function renderChord(){
   const box=$('chordCard'); if(!box) return;
   fitProg();
@@ -126,11 +168,11 @@ function renderChord(){
   if(ctl){
     ctl.appendChild(chipSeg('小节',[1,2,3,4,8],progBars(),n=>setProgBars(n)));
     ctl.appendChild(chipRange('音量',0,100,Math.round(chordVol*100),v=>v,x=>{chordVol=x/100;applyChordFx();save();}));
-    const mixChip=chipRange('延时 Mix',0,100,Math.round((chordFxMix==null?1:chordFxMix)*100),v=>v,
-      x=>{chordFxMix=x/100;applyChordFx();save();});
-    mixChip.title='和弦进行轨延时效果量（干声 / 回声的比例，0＝只听干声）';
-    ctl.appendChild(mixChip);
   }
+  /* 「延时 Mix」紧挨延时预设（下面和 cc-fx 一起包进 .cc-fxwrap），不再和音量挤在一起 */
+  const mixChip=chipRange('Mix',0,100,Math.round((chordFxMix==null?1:chordFxMix)*100),v=>v,
+    x=>{chordFxMix=x/100;applyChordFx();save();});
+  mixChip.title='和弦进行轨延时效果量（干声 / 回声的比例，0＝只听干声）';
   const ciSel=head.querySelector('select.cc-inst');
   if(ciSel){
     fillInstSelect(ciSel,chordInstOf());
@@ -149,6 +191,11 @@ function renderChord(){
       setChordFx(fxSel.value); save();
       toast('和弦进行轨延时 → '+fxSel.options[fxSel.selectedIndex].text);
     });
+    const wrap=document.createElement('span'); wrap.className='cc-fxwrap';
+    head.insertBefore(wrap,fxSel);                 // 延时预设 + Mix 滑杆 并排成组
+    wrap.append(fxSel,mixChip);
+  }else{
+    head.appendChild(mixChip);                     // 兜底：没有延时下拉时至少别把 Mix 弄丢
   }
   box.appendChild(head);
 
@@ -190,12 +237,17 @@ function renderChord(){
   bars.appendChild(add);
   box.appendChild(bars);
 
+  /* ---- 常用和弦进行预设（当前风格 / 当前调式），下拉即整条替换 ---- */
+  const prow=buildProgPresetRow();
+  if(prow) box.appendChild(prow);
+
   const pick=buildPicker(); if(pick) box.appendChild(pick);
 
   const hint=document.createElement('div'); hint.className='cc-hint';
   hint.innerHTML='每个方块的宽度＝它持续的拍数，<b>点方块</b>挑和弦（级数表里点一下即可替换并试听），'+
     '<b>‹ ›</b> 改拍长、<b>⧉</b> 拆分插入、<b>✕</b> 删除；方块的「第几拍」就是它覆盖的范围。'+
-    '顶部右侧两个下拉分别是<b>和弦音色</b>与<b>延时 Delay</b>（配合「延时 Mix」滑杆），试听即刻听得到回声。'+
+    '顶部右侧是<b>和弦音色</b>与<b>延时 Delay</b> 下拉（紧跟着 <b>Mix</b> 强度滑杆），试听即刻听得到回声；'+
+    '方块下方的<b>常用和弦进行</b>是本风格 / 本调式的常用走向，选一条即整条替换（拍数自动铺满）。'+
     '各声部（鼓除外）卡片上的 <b>⟳ 吸附和弦</b> 可把现有音符一次性对齐到这条进行。';
   box.appendChild(hint);
 }
