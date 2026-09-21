@@ -159,11 +159,11 @@ function ksBuffer(freq,seconds,type){
   const len=Math.max(N+1,Math.round(sr*seconds));
   const out=new Float32Array(len), ring=new Float32Array(N);
   for(let i=0;i<N;i++) ring[i]=Math.random()*2-1;
-  const damp=type==='guitar'?.9965:.995, tone=type==='guitar'?.52:.44;
+  const pr={guitar:{damp:.9965,tone:.52},eguitar:{damp:.9972,tone:.46}}[type]||{damp:.995,tone:.44};
   let idx=0;
   for(let i=0;i<len;i++){
     const cur=ring[idx], nxt=ring[(idx+1)%N];
-    ring[idx]=(cur*(1-tone)+nxt*tone)*damp;
+    ring[idx]=(cur*(1-pr.tone)+nxt*pr.tone)*pr.damp;
     out[i]=cur; idx=(idx+1)%N;
   }
   const atk=Math.min(48,len);
@@ -175,9 +175,10 @@ function ksBuffer(freq,seconds,type){
   return buf;
 }
 function ksPlay(freq,t,dest,type,vel){
-  const s=audioCtx.createBufferSource(); s.buffer=ksBuffer(freq,type==='guitar'?1.9:2.4,type);
+  const sec=type==='guitar'?1.9:(type==='eguitar'?2.3:2.4);
+  const s=audioCtx.createBufferSource(); s.buffer=ksBuffer(freq,sec,type);
   const lp=audioCtx.createBiquadFilter(); lp.type='lowpass';
-  lp.frequency.value=type==='guitar'?3600:6200;
+  lp.frequency.value=type==='guitar'?3600:(type==='eguitar'?3000:6200);
   const g=audioCtx.createGain(); g.gain.value=.5*vel;
   s.connect(lp); lp.connect(g); g.connect(dest); s.start(t);
 }
@@ -219,6 +220,35 @@ function fmVoice(freq,t,dest,o){
   car.connect(g); g.connect(dest);
   car.start(t); car.stop(t+o.dur+.1); mod.start(t); mod.stop(t+o.dur+.1);
 }
+/* 滤波扫频音色（合成拨弦 / 酸性贝斯 / 失真的底子）：
+   振荡器 → 共振低通（截止频率从 cHi 滑到 cLo）→ 音量包络。
+   q 越大「呜哇」感越强；decay 是滤波器滑落的时间尺度。 */
+function filterPluck(freq,t,dest,o){
+  const f=audioCtx.createBiquadFilter(); f.type='lowpass'; f.Q.value=o.q||8;
+  const cHi=Math.min(16000,o.cutoffHi||freq*8), cLo=Math.max(60,o.cutoffLo||freq*1.2);
+  f.frequency.setValueAtTime(cHi,t);
+  f.frequency.exponentialRampToValueAtTime(cLo,t+(o.decay||.18));
+  const g=audioCtx.createGain();
+  g.gain.setValueAtTime(.0001,t);
+  g.gain.exponentialRampToValueAtTime(Math.max(.0002,o.peak),t+(o.attack||.004));
+  g.gain.exponentialRampToValueAtTime(.0001,t+o.dur);
+  f.connect(g); g.connect(dest);
+  (o.types||['sawtooth']).forEach((tp,i)=>{
+    const os=audioCtx.createOscillator(); os.type=tp;
+    os.frequency.value=freq*(i?1+(i%2?1:-1)*(o.mix||.4)*.006:1);
+    os.connect(f); os.start(t); os.stop(t+o.dur+.3);
+  });
+}
+/* 失真曲线（WaveShaper 软削波，带缓存）：amount 0~1，越大越炸 */
+const shaperCache=new Map();
+function shaperCurve(amount){
+  amount=clamp(amount,0,1);
+  if(shaperCache.has(amount)) return shaperCache.get(amount);
+  const n=2048, c=new Float32Array(n), k=amount*90+.5;
+  for(let i=0;i<n;i++){ const x=i*2/n-1; c[i]=(1+k)*x/(1+k*Math.abs(x)); }
+  shaperCache.set(amount,c);
+  return c;
+}
 
 /* 各音色：VOICE[instId](freq, t, dest, vel, dur) */
 const VOICE={
@@ -230,11 +260,45 @@ const VOICE={
     noiseBurst(t,dest,.03*vel,.012,4200);
   },
   organ(f,t,dest,vel,dur){
-    sustainOsc(f,t,dest,{types:['sine','sine','sine'],mix:.5,attack:.02,dur,peak:.34*vel,sus:.92,cutoff:5400,release:.06});
-    additive(f,t,dest,[[2,.18,dur+.7],[3,.12,dur+.55],[4,.08,dur+.5],[6,.05,dur+.4]],vel*.45);
+    /* 音轮风琴：1/2/3/4/6/8 泛音拉杆 + 双排微失谐的合唱感，方波般的饱满持续 */
+    const g=audioCtx.createGain();
+    g.gain.setValueAtTime(.0001,t);
+    g.gain.linearRampToValueAtTime(.3*vel,t+.02);
+    g.gain.setValueAtTime(.3*vel,t+Math.max(dur*.85,.1));
+    g.gain.setTargetAtTime(.0001,t+dur*.9,.05);
+    const lp=audioCtx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=5600;
+    g.connect(lp); lp.connect(dest);
+    const stop=t+dur+1;
+    for(const [n,amp] of [[1,.3],[2,.24],[3,.17],[4,.12],[6,.09],[8,.06]]){
+      for(const det of [0,1.2,-1.2]){                  // 双排微失谐 ≈ Leslie 合唱
+        const o=audioCtx.createOscillator(); o.type='sine'; o.frequency.value=f*n; o.detune.value=det;
+        const og=audioCtx.createGain(); og.gain.value=amp/3;
+        o.connect(og); og.connect(g); o.start(t); o.stop(stop);
+      }
+    }
   },
   pluck(f,t,dest,vel){ ksPlay(f,t,dest,'harp',vel); },
   guitar(f,t,dest,vel){ ksPlay(f,t,dest,'guitar',vel); noiseBurst(t,dest,.05*vel,.02,1800); },
+  eguitar(f,t,dest,vel){ ksPlay(f,t,dest,'eguitar',vel); noiseBurst(t,dest,.035*vel,.012,2400); },
+  dist(f,t,dest,vel,dur){
+    /* 失真吉他：三把微失谐锯齿 → 软削波 → 低通（高频随音长收掉） */
+    dur=Math.max(.18,dur);
+    const ws=audioCtx.createWaveShaper(); ws.curve=shaperCurve(.72); ws.oversample='2x';
+    const pre=audioCtx.createGain(); pre.gain.value=2.4;
+    const post=audioCtx.createBiquadFilter(); post.type='lowpass';
+    post.frequency.setValueAtTime(3600,t);
+    post.frequency.exponentialRampToValueAtTime(1900,t+dur*.7);
+    const g=audioCtx.createGain();
+    g.gain.setValueAtTime(.0001,t);
+    g.gain.linearRampToValueAtTime(.16*vel,t+.008);
+    g.gain.setValueAtTime(.16*vel,t+dur*.7);
+    g.gain.exponentialRampToValueAtTime(.0001,t+dur*1.05);
+    for(const det of [0,-7,7]){
+      const o=audioCtx.createOscillator(); o.type='sawtooth'; o.frequency.value=f; o.detune.value=det;
+      o.connect(pre); o.start(t); o.stop(t+dur*1.1);
+    }
+    pre.connect(ws); ws.connect(post); post.connect(g); g.connect(dest);
+  },
   bell(f,t,dest,vel){
     fmVoice(f,t,dest,{ratio:1.41,index:2.4,decay:.13,amp:.4*vel,dur:3.6,attack:.003});
     fmVoice(f*2.76,t,dest,{ratio:1.1,index:.9,decay:.06,amp:.11*vel,dur:1.6,attack:.002});
@@ -247,12 +311,27 @@ const VOICE={
     sustainOsc(f,t,dest,{types:['sawtooth','sawtooth','sawtooth'],mix:1.1,attack:.19,dur,peak:.21*vel,sus:.85,
       cutoff:3400,release:.4,lfo:{rate:5.2,depth:.012}});
   },
+  cello(f,t,dest,vel,dur){
+    /* 大提琴：弓弦感的双锯齿 + 低八度腔体共鸣 */
+    sustainOsc(f,t,dest,{types:['sawtooth','sawtooth'],mix:.75,attack:.14,dur,peak:.22*vel,sus:.85,
+      cutoff:2500,release:.38,lfo:{rate:5.5,depth:.014}});
+    sustainOsc(f/2,t,dest,{types:['sawtooth'],attack:.18,dur,peak:.08*vel,sus:.8,cutoff:1200,release:.4});
+  },
   pad(f,t,dest,vel,dur){
     sustainOsc(f,t,dest,{types:['sawtooth','triangle','sawtooth'],mix:1.7,attack:.42,dur:dur*1.5,peak:.18*vel,sus:.9,
       cutoff:2100,release:.85,lfo:{rate:3.1,depth:.01}});
   },
   lead(f,t,dest,vel,dur){
-    sustainOsc(f,t,dest,{types:['square','sawtooth'],mix:.8,attack:.012,dur,peak:.18*vel,sus:.8,cutoff:4600,release:.15});
+    /* 合成主音：方波+锯齿双层 + 轻微颤音 + 低八度衬底 */
+    sustainOsc(f,t,dest,{types:['square','sawtooth'],mix:.9,attack:.01,dur,peak:.17*vel,sus:.78,cutoff:5200,release:.16,
+      lfo:{rate:5.6,depth:.006}});
+    sustainOsc(f/2,t,dest,{types:['square'],attack:.012,dur:dur*.9,peak:.05*vel,sus:.6,cutoff:2200,release:.12});
+  },
+  supersaw(f,t,dest,vel,dur){
+    /* 超锯：五把微失谐锯齿叠出宽厚的「墙」，再垫一个低八度锯齿 */
+    sustainOsc(f,t,dest,{types:['sawtooth','sawtooth','sawtooth','sawtooth','sawtooth'],mix:2.4,attack:.02,dur,
+      peak:.15*vel,sus:.75,cutoff:5200,release:.22});
+    sustainOsc(f/2,t,dest,{types:['sawtooth'],attack:.025,dur,peak:.07*vel,sus:.6,cutoff:1600,release:.2});
   },
   bass(f,t,dest,vel,dur){
     sustainOsc(f,t,dest,{types:['sawtooth','sine'],mix:.6,attack:.006,dur:dur*.9,peak:.26*vel,sus:.5,cutoff:1500,release:.13});
@@ -295,19 +374,37 @@ const VOICE={
     noiseBurst(t,dest,.05*vel,.09,3200);
   },
   brass(f,t,dest,vel,dur){
-    sustainOsc(f,t,dest,{types:['sawtooth','sawtooth'],mix:1.4,attack:.055,dur,peak:.22*vel,sus:.86,
-      cutoff:2700,release:.2,lfo:{rate:4.6,depth:.008}});
+    /* 合成铜管：滤波器「吹开」上扫（低→高）才是铜管感，纯锯齿只是蜂鸣 */
+    dur=Math.max(.18,dur);
+    const fl=audioCtx.createBiquadFilter(); fl.type='lowpass'; fl.Q.value=2;
+    fl.frequency.setValueAtTime(Math.max(200,f*1.5),t);
+    fl.frequency.linearRampToValueAtTime(Math.min(6000,f*7),t+.13);
+    fl.frequency.setTargetAtTime(Math.min(4200,f*4.5),t+.13,.3);
+    const g=audioCtx.createGain();
+    g.gain.setValueAtTime(.0001,t);
+    g.gain.linearRampToValueAtTime(.23*vel,t+.05);
+    g.gain.setValueAtTime(.23*vel,t+dur*.8);
+    g.gain.exponentialRampToValueAtTime(.0001,t+dur*1.1);
+    for(const [det,amp] of [[0,1],[8,.5],[-8,.5]]){
+      const o=audioCtx.createOscillator(); o.type='sawtooth'; o.frequency.value=f; o.detune.value=det;
+      const og=audioCtx.createGain(); og.gain.value=amp;
+      o.connect(og); og.connect(fl); o.start(t); o.stop(t+dur*1.15);
+    }
+    fl.connect(g); g.connect(dest);
   },
-  chip(f,t,dest,vel,dur){
-    sustainOsc(f,t,dest,{types:['square'],attack:.003,dur,peak:.19*vel,sus:.34,cutoff:3400,release:.045});
+  plucksyn(f,t,dest,vel){
+    /* 合成拨弦：滤波器快速下滑的「弹」感，比真实拨弦更亮更规整 */
+    filterPluck(f,t,dest,{types:['sawtooth','square'],mix:.5,q:3,
+      cutoffHi:Math.min(9000,f*9),cutoffLo:Math.max(120,f*1.4),decay:.16,dur:1.5,peak:.3*vel});
   },
   acid(f,t,dest,vel,dur){
-    sustainOsc(f,t,dest,{types:['sawtooth','square'],mix:1.2,attack:.004,dur:dur*.85,peak:.23*vel,sus:.42,
-      cutoff:1150,release:.1});
-    const o=audioCtx.createOscillator(); o.type='sine'; o.frequency.value=f;
-    const g=audioCtx.createGain(); g.gain.setValueAtTime(.1*vel,t);
-    g.gain.exponentialRampToValueAtTime(.0001,t+dur);
-    o.connect(g); g.connect(dest); o.start(t); o.stop(t+dur+.1);
+    /* 酸性贝斯（303 味）：高 Q 共振滤波大幅下扫，低八度正弦托底 */
+    filterPluck(f,t,dest,{types:['sawtooth'],q:14,
+      cutoffHi:Math.min(7000,f*7),cutoffLo:Math.max(80,f*1.6),decay:.22,dur:Math.max(.4,dur*.9),peak:.3*vel});
+    const o=audioCtx.createOscillator(); o.type='sine'; o.frequency.value=f/2;
+    const g=audioCtx.createGain(); g.gain.setValueAtTime(.12*vel,t);
+    g.gain.exponentialRampToValueAtTime(.0001,t+dur*1.2);
+    o.connect(g); g.connect(dest); o.start(t); o.stop(t+dur*1.3);
   },
 };
 function playTrackNote(tr,row,t,vel){

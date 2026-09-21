@@ -3,28 +3,37 @@
    step-sequencer · 03-styles
    音色库 · 音乐风格 · 声部配色
    ============================================================ */
-/* ============ 音色库 ============ */
+/* ============ 音色库 ============
+   分组按制作习惯排：下拉框的 optgroup 顺序与这里一致。
+   精选原则（实用性优先）：
+     · 删掉了合成味太假且低频使用的「芯片音 chip」
+     · 薄弱实现全部重做（organ 饱满拉杆 / brass 滤波吹开 / acid 303 扫频 / lead 颤音衬底）
+     · 新增高频实用音色：清音电吉他 / 失真吉他 / 大提琴 / 超锯 / 合成拨弦 */
 const INSTRUMENTS=[
   {id:'piano',  name:'三角钢琴',   group:'键盘'},
   {id:'epiano', name:'电钢琴',     group:'键盘'},
   {id:'organ',  name:'管风琴',     group:'键盘'},
-  {id:'pluck',  name:'竖琴拨弦',   group:'色彩'},
-  {id:'guitar', name:'尼龙吉他',   group:'色彩'},
-  {id:'bell',   name:'钟琴',       group:'色彩'},
-  {id:'marimba',name:'马林巴',     group:'色彩'},
-  {id:'musicbox',name:'音乐盒',    group:'色彩'},
-  {id:'vibes',  name:'电颤琴',     group:'色彩'},
-  {id:'koto',   name:'古筝',       group:'色彩'},
+  {id:'guitar', name:'尼龙吉他',   group:'吉他'},
+  {id:'eguitar',name:'清音电吉他', group:'吉他'},
+  {id:'dist',   name:'失真吉他',   group:'吉他'},
+  {id:'bass',   name:'电贝斯',     group:'贝斯'},
+  {id:'subbass',name:'合成低音',   group:'贝斯'},
+  {id:'acid',   name:'酸性贝斯',   group:'贝斯'},
+  {id:'pluck',  name:'竖琴拨弦',   group:'拨弦·敲击'},
+  {id:'marimba',name:'马林巴',     group:'拨弦·敲击'},
+  {id:'bell',   name:'钟琴',       group:'拨弦·敲击'},
+  {id:'vibes',  name:'电颤琴',     group:'拨弦·敲击'},
+  {id:'musicbox',name:'音乐盒',    group:'拨弦·敲击'},
+  {id:'plucksyn',name:'合成拨弦',  group:'拨弦·敲击'},
   {id:'strings',name:'弦乐群',     group:'氛围'},
+  {id:'cello',  name:'大提琴',     group:'氛围'},
   {id:'pad',    name:'合成铺底',   group:'氛围'},
   {id:'choir',  name:'人声合唱',   group:'氛围'},
   {id:'flute',  name:'长笛',       group:'氛围'},
   {id:'lead',   name:'合成主音',   group:'合成'},
+  {id:'supersaw',name:'超锯合成',  group:'合成'},
   {id:'brass',  name:'合成铜管',   group:'合成'},
-  {id:'chip',   name:'芯片音',     group:'合成'},
-  {id:'bass',   name:'电贝斯',     group:'低音'},
-  {id:'subbass',name:'合成低音',   group:'低音'},
-  {id:'acid',   name:'酸性贝斯',   group:'低音'},
+  {id:'koto',   name:'古筝',       group:'民族'},
 ];
 const INST_NAME=id=>(INSTRUMENTS.find(i=>i.id===id)||{}).name||id;
 
@@ -58,7 +67,7 @@ const STYLES=[
  desc:'抓耳主线 · 规整八拍 · 电钢与拨弦',
  density:[9,11],center:4.0,range:2.3,peak:.4,step:1.05,leap:.95,run:1,rest:1,maskDens:.5,chBias:1,seventh:false,
  prog:[[0,4],[0,5],[0,3],[5,3,4,0],[0,4,5,3]],
- mel:['epiano','piano','pluck','marimba','bell'],bassI:['bass','subbass'],chordI:['epiano','pluck','marimba'],
+ mel:['epiano','piano','pluck','eguitar','marimba'],bassI:['bass','subbass'],chordI:['epiano','pluck','marimba'],
  bassPats:[{0:0,3:0,6:'f'},{0:0,4:0,6:'f'},{0:0,2:0,4:0,6:'f'},{0:0,3:'f',6:0}],
  arpPats:[[1,0,1,0,1,1,0,1],[1,0,1,0,1,0,1,0],[1,1,0,1,0,1,1,0],[1,0,0,1,0,1,0,1]],
  arpOrders:[[0,1,2],[2,1,0],[0,1,2,1],[1,2,0]],padRole:false,drums:['pop','four','folk']},
@@ -68,7 +77,7 @@ const STYLES=[
  density:[12,14],center:4.2,range:2.1,peak:.35,step:.9,leap:1.15,run:1.4,rest:.8,maskDens:.62,chBias:1,
  prog:[[0,5],[0,6],[0,5,3,4],[0,4],[3,4,5,4]],
  masks:[[1,1,0,1,1,0,1,1,1,0,1,1,0,1,1,1],[1,0,1,1,0,1,1,0,1,0,1,1,0,1,0,1]],
- mel:['lead','pluck','epiano','bell','pad'],bassI:['subbass','bass'],chordI:['pluck','epiano','lead'],
+ mel:['lead','supersaw','pluck','epiano','bell'],bassI:['subbass','acid','bass'],chordI:['pluck','plucksyn','epiano','lead'],
  bassPats:[{0:0,2:0,4:0,6:0},{0:0,3:0,6:0},{0:0,1:0,2:0,4:0,6:0},{0:0,2:'f',4:0,6:'t'}],
  arpPats:[[1,1,1,1,1,1,1,1],[1,0,1,1,1,0,1,1],[1,1,0,1,1,1,0,1],[1,0,1,0,1,0,1,0]],
  arpOrders:[[0,1,2],[0,1,2,1],[2,1,0],[0,2,1],[1,2,0]],padRole:true,drums:['edm','four','trap']},
@@ -77,7 +86,7 @@ const STYLES=[
  desc:'推进式律动 · 切分 riff · 失真吉他感',
  density:[10,12],center:3.9,range:2.2,peak:.35,step:.95,leap:1.2,run:1.15,rest:.9,maskDens:.55,chBias:1.05,
  prog:[[0,6],[0,3],[0,4,6,4],[0,4]],
- mel:['guitar','organ','lead','piano'],bassI:['bass'],chordI:['guitar','organ','pluck'],
+ mel:['guitar','eguitar','dist','organ','lead'],bassI:['bass','acid'],chordI:['eguitar','organ','pluck'],
  bassPats:[{0:0,2:0,3:0,6:0},{0:0,3:0,5:'f',6:0},{0:0,2:0,4:0,6:0}],
  arpPats:[[1,1,0,1,1,0,1,1],[1,0,1,0,1,1,0,1],[1,1,1,1,1,1,1,1]],
  arpOrders:[[0,1,2],[0,0,1],[2,1,0],[0,2,1]],padRole:false,drums:['rock','pop','four']},
@@ -95,7 +104,7 @@ const STYLES=[
  desc:'滑音 808 · 十六分镲片 · 冷冽短音',
  density:[9,11],center:4.1,range:2,peak:.35,step:1,leap:1.1,run:1.3,rest:1.1,maskDens:.6,chBias:1,seventh:false,
  prog:[[0,3],[0,5],[0,6],[1,0]],
- mel:['bell','lead','marimba','pluck','epiano'],bassI:['subbass'],chordI:['pluck','bell','marimba'],
+ mel:['bell','lead','pluck','marimba','epiano'],bassI:['subbass','acid'],chordI:['pluck','bell','marimba'],
  bassPats:[{0:0,6:0},{0:0,3:0},{0:0,5:0,6:0}],
  arpPats:[[1,0,0,1,0,1,0,0],[1,0,1,0,0,0,1,0],[1,0,0,0,1,0,0,0]],
  arpOrders:[[0,1,2],[2,1,0],[0,2,1]],padRole:true,drums:['trap','half','edm']},
@@ -124,7 +133,7 @@ const STYLES=[
  density:[7,9],center:4.2,range:2,peak:.45,step:1.25,leap:.8,run:.7,rest:1.15,maskDens:.38,chBias:1.05,seventh:false,
  prog:[[0,3],[0,4],[0,5],[5,3]],
  masks:[[1,0,0,0,0,0,1,0,0,0,1,0,0,0,0,1],[1,0,0,1,0,0,0,0,1,0,0,0,1,0,0,1]],
- mel:['pluck','bell','marimba','organ'],bassI:['bass','subbass'],chordI:['pluck','bell','marimba'],
+ mel:['koto','pluck','bell','marimba'],bassI:['bass','subbass'],chordI:['koto','pluck','bell','marimba'],
  bassPats:[{0:0,6:0},{0:0,3:0},{0:0,4:0}],
  arpPats:[[1,0,0,1,0,0,1,0],[1,0,1,0,0,1,0,0],[1,0,0,0,1,0,0,0]],
  arpOrders:[[0,1,2],[2,1,0],[0,2,1]],padRole:true,drums:['folk','ambient','bossa']},

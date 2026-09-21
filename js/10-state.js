@@ -5,6 +5,9 @@
    ============================================================ */
 /* ============ 数据模型 ============ */
 let tid=0;
+/* 音色 id 校验：旧存档可能持有已删除 / 改名的音色（如 chip），失效 id 统一回落钢琴 */
+const instValid=id=>typeof id==='string'&&INSTRUMENTS.some(x=>x.id===id);
+const instOr=id=>instValid(id)?id:'piano';
 function makeTrack(kind,name,inst,oct){
   const t={
     id:++tid, kind:kind||'inst', name:name||('声部 '+tid),
@@ -194,7 +197,7 @@ function loadSaved(){
     chordFxMix=(typeof d.chordFxMix==='number'&&d.chordFxMix>=0&&d.chordFxMix<=1)?d.chordFxMix:1;
     openTrackId=(typeof d.openTrackId==='number')?d.openTrackId:null;
     state.tracks=d.tracks.slice(0,MAX_TRACKS).map(o=>{
-      const t=makeTrack(o.kind,o.name,o.inst,o.oct);
+      const t=makeTrack(o.kind,o.name,instOr(o.inst),o.oct);
       const bars=clamp(o.bars|0,1,MAX_BARS);
       t.bars=bars;
       Object.assign(t,{seq:fitArr(o.seq,bars*BAR),last:new Array(bars*BAR).fill(-1),

@@ -489,7 +489,7 @@ function autoArrange(){
     {name:'贝斯',inst:arrPick(SP_.bassI||['bass']),oct:ARR_LAYER.bass.oct,fill:fillBass},
     {name:'琶音 Arp',inst:arrPick(SP_.chordI||['pluck','epiano','marimba']),oct:ARR_LAYER.arp.oct,fill:fillArp},
   ];
-  if(SP_.padRole) roles.push({name:'铺底',inst:arrPick(['pad','strings','organ']),oct:ARR_LAYER.pad.oct,fill:fillPad});
+  if(SP_.padRole) roles.push({name:'铺底',inst:arrPick(['pad','strings','choir','cello','organ']),oct:ARR_LAYER.pad.oct,fill:fillPad});
   const made=[];
   for(const role of roles){
     const t=ensureFreeVoice(role,mel);
