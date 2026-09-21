@@ -35,9 +35,20 @@ const angleOf=(e,el)=>{
 };
 function attachDialEvents(el,tr,s){
   let dragging=false,lastA=0,acc=0,startPos=0,moved=false;
+  /* 触屏：长按呼出「力度 / 清除」面板；contextmenu（Android 长按）不当作逆转 */
+  let lpTimer=0,touchOn=false,lastTouchEnd=0,sx=0,sy=0;
   el.addEventListener('pointerdown',e=>{
     if(e.button===2) return;
     if(e.button===1){e.preventDefault();toggleStep(tr,s);return;}
+    if(e.pointerType==='touch'){
+      touchOn=true;sx=e.clientX;sy=e.clientY;
+      if(lpTimer) clearTimeout(lpTimer);
+      lpTimer=setTimeout(()=>{                          // 长按 480ms：中断拖拽，呼出面板
+        lpTimer=0;
+        if(dragging){dragging=false;el.classList.remove('drag');updateDial(tr,s);}
+        openVelPop(tr,s,el);
+      },480);
+    }
     dragging=true;moved=false;lastA=angleOf(e,el);
     startPos=posOf(tr,s);acc=startPos*360/9;
     el.classList.add('drag');
@@ -46,6 +57,7 @@ function attachDialEvents(el,tr,s){
   });
   el.addEventListener('mousedown',e=>{if(e.button===1)e.preventDefault();});
   el.addEventListener('pointermove',e=>{
+    if(lpTimer&&(Math.abs(e.clientX-sx)>9||Math.abs(e.clientY-sy)>9)){clearTimeout(lpTimer);lpTimer=0;}   // 移动了＝在拖拽，不弹面板
     if(!dragging) return;
     const a=angleOf(e,el);
     let d=a-lastA; lastA=a;
@@ -59,6 +71,8 @@ function attachDialEvents(el,tr,s){
     k.dial.classList.toggle('on',p!==0);
   });
   const finish=e=>{
+    if(lpTimer){clearTimeout(lpTimer);lpTimer=0;}      // 快速点按：直接步进，不弹面板
+    if(e&&e.pointerType==='touch'){touchOn=false;lastTouchEnd=Date.now();}
     if(!dragging) return;
     dragging=false; el.classList.remove('drag');
     let p=mod9(Math.round(acc/(360/9)));
@@ -66,9 +80,14 @@ function attachDialEvents(el,tr,s){
     setStep(tr,s,rowOfPos(p));
   };
   el.addEventListener('pointerup',finish);
-  el.addEventListener('pointercancel',()=>{dragging=false;el.classList.remove('drag');updateDial(tr,s);});
+  el.addEventListener('pointercancel',e=>{
+    if(lpTimer){clearTimeout(lpTimer);lpTimer=0;}
+    if(e&&e.pointerType==='touch'){touchOn=false;lastTouchEnd=Date.now();}
+    dragging=false;el.classList.remove('drag');updateDial(tr,s);
+  });
   el.addEventListener('contextmenu',e=>{
     e.preventDefault();
+    if(touchOn||Date.now()-lastTouchEnd<800) return;   // 触屏长按≠逆转（长按走「力度/清除」面板）
     setStep(tr,s,rowOfPos(mod9(posOf(tr,s)-1)));
   });
   el.addEventListener('keydown',e=>{
@@ -121,4 +140,69 @@ function randomizeDrum(tr){
   tr.p=p; tr.drum=id;
   refreshDrumCells(tr); refreshSub(tr); save();
   toast('🎲 已按「'+STYLE().name+'」生成律动（骨架：'+PRESET_BY_ID(id).name+'），可继续点击网格修改');
+}
+
+/* ============ 触屏：长按旋钮呼出「力度 / 清除」面板 ============
+   手机没有滚轮与右键，力度与清除都从这里走：
+   · 有音符：滑杆实时调力度（20%–100%），「清除音符」一键删除该步
+   · 没音符：只给关闭按钮（点按旋钮本身即可放音）
+   桌面端不受影响：单击步进 / 拖拽旋转 / 滚轮力度 / 右键逆转照旧 */
+let velPop=null, velPopCtl=null;
+function ensureVelPop(){
+  if(velPop) return velPop;
+  velPop=document.createElement('div');
+  velPop.className='velpop';
+  velPop.innerHTML='<div class="vp-title"></div>'+
+    '<div class="vp-row"><span>力度</span><input type="range" min="20" max="100" step="5"><b class="vp-val"></b></div>'+
+    '<div class="vp-row"><button type="button" class="vp-off">清除音符</button><button type="button" class="vp-close">关闭</button></div>';
+  document.body.appendChild(velPop);
+  return velPop;
+}
+function closeVelPop(){
+  if(velPopCtl){ velPopCtl.cleanup(); velPopCtl=null; }
+  if(velPop) velPop.classList.remove('show');
+}
+function openVelPop(tr,s,dial){
+  closeVelPop();
+  const pop=ensureVelPop();
+  const has=tr.seq[s]!==-1;
+  pop.querySelector('.vp-title').textContent='第 '+(s+1)+' 步 · '+(has?noteName(rowMidi(tr.seq[s],tr.oct)):'空');
+  const rng=pop.querySelector('input'), val=pop.querySelector('.vp-val');
+  const offBtn=pop.querySelector('.vp-off'), xBtn=pop.querySelector('.vp-close');
+  const row=rng.closest('.vp-row');
+  row.style.display=has?'':'none';                     // 空步没有力度可调
+  offBtn.style.display=has?'':'none';
+  const cur=velOf(tr,s);
+  rng.value=Math.round((cur==null?.82:cur)*100);
+  val.textContent=rng.value+'%';
+  const onInput=()=>{
+    if(tr.seq[s]===-1) return;
+    if(!Array.isArray(tr.vel)) tr.vel=new Array(stepsOf(tr)).fill(null);
+    tr.vel[s]=+rng.value/100;
+    val.textContent=rng.value+'%';
+    updateDial(tr,s); save();
+  };
+  const onOff=()=>{ setStep(tr,s,-1,false); closeVelPop(); };
+  const onX=()=>closeVelPop();
+  const onDoc=e=>{ if(!pop.contains(e.target)&&e.target!==dial) closeVelPop(); };
+  const onScroll=()=>closeVelPop();
+  rng.addEventListener('input',onInput);
+  offBtn.addEventListener('click',onOff);
+  xBtn.addEventListener('click',onX);
+  setTimeout(()=>document.addEventListener('pointerdown',onDoc,true),0);   // 稍后注册：不拦截本次长按
+  window.addEventListener('scroll',onScroll,{capture:true,passive:true});
+  velPopCtl={cleanup(){
+    rng.removeEventListener('input',onInput);
+    offBtn.removeEventListener('click',onOff);
+    xBtn.removeEventListener('click',onX);
+    document.removeEventListener('pointerdown',onDoc,true);
+    window.removeEventListener('scroll',onScroll,{capture:true});
+  }};
+  pop.classList.add('show');                           // 先显示才能量尺寸
+  const b=dial.getBoundingClientRect();
+  let x=b.left+b.width/2-pop.offsetWidth/2, y=b.top-pop.offsetHeight-10;
+  if(y<8) y=b.bottom+10;                               // 顶上放不下就翻到下面
+  x=clamp(x,8,window.innerWidth-pop.offsetWidth-8);
+  pop.style.left=x+'px'; pop.style.top=y+'px';
+  if(navigator.vibrate){ try{navigator.vibrate(12);}catch(_){} }   // 轻震动反馈
 }

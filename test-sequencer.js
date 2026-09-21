@@ -82,6 +82,8 @@ const byId={};
 const document={
   getElementById:id=>(byId[id]||(byId[id]=new El('div'))),
   createElement:tag=>new El(tag),
+  querySelector:()=>null, querySelectorAll:()=>[],   // 顶层查询：测试桩不需要真实页脚
+  addEventListener(){}, removeEventListener(){},
   activeElement:{tagName:'BODY'},
 };
 const store={};

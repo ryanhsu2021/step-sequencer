@@ -106,5 +106,7 @@ window.addEventListener('beforeunload',()=>{ if(!audioCtx) save(); });
   rootSel.value=String(rootIdx); modeSel.value=String(modeIdx);
   styleSel.value=String(styleIdx); styleSel.title=styleTip();
   renderTracks();
+  const hp=document.querySelector('footer details.help');
+  if(hp&&window.innerWidth>900) hp.open=true;          // 宽屏默认展开使用说明，手机端收起省空间
   initMidi();
 })();
