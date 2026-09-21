@@ -433,6 +433,7 @@ function mixerStrip(o){
 
   const dot=document.createElement('span'); dot.className='mx-dot';
   if(o.bg) dot.style.background=o.bg;
+  if(o.bg) row.style.setProperty('--tcd',o.bg);   /* 通道条左侧色带与声部卡同色 */
   dot.title=o.title||o.name;
 
   const tag=document.createElement('span'); tag.className='mx-tag'; tag.textContent=o.tag||'';
