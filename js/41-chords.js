@@ -125,27 +125,31 @@ function planToChords(plan){
   return out.map(c=>mkChord(c.root,c.beats,c.seventh));
 }
 /* 声部（及和弦轨）的混音字段统一写入口：音量 / 声像 / 静音 / 独奏 / 延时 / 强度。
-   写完后让总线立刻跟上（改音量不必等下一次发声），并持久化；面板由调用方决定是否重绘。 */
+   写完后让总线立刻跟上（改音量不必等下一次发声），并持久化；
+   再由 syncMixUI 把声部卡 / 调音台 / 和弦卡三处控件精准回写——同一份状态，改哪边都同步。
+   （不再整台重建调音台：innerHTML 重建会打断正在拖动的推子） */
 const clamp01=v=>Math.max(0,Math.min(1,v));
 function setTrackVol(tr,v,quiet){
   if(!tr) return;
   tr.vol=clamp01(v); busSync(tr); save();
-  if(!quiet) renderMixer();
+  syncMixUI(tr.id,{vol:tr.vol});
 }
 function setTrackPan(tr,v,quiet){
   if(!tr||tr.kind!=='inst') return;
   tr.pan=Math.max(-1,Math.min(1,v)); busSync(tr); save();
-  if(!quiet) renderMixer();
+  syncMixUI(tr.id,{pan:tr.pan});
 }
 function setTrackMute(tr,on,quiet){
   if(!tr) return;
   tr.mute=!!on; muteLatch(tr); save();
-  if(!quiet){ renderTracks(); renderMixer(); }
+  syncMixUI(tr.id,{mute:tr.mute});
+  renderTracks(); renderMixer();                  // M/S 低频点击：整栈重画以刷新「独奏中」等全局标记
 }
 function setTrackSolo(tr,on,quiet){
   if(!tr) return;
   tr.solo=!!on; save();
-  if(!quiet){ renderTracks(); renderMixer(); }
+  syncMixUI(tr.id,{solo:tr.solo});
+  renderTracks(); renderMixer();
 }
 /* 鼓声部不提供延时（鼓点加回声容易糊）：把 fx 钉死在「关」，总线一并归零 */
 function setTrackDelay(tr,id,quiet){
@@ -153,12 +157,12 @@ function setTrackDelay(tr,id,quiet){
   if(tr.kind==='drum'){ tr.fx='off'; setTrackFx(tr,'off'); }
   else setTrackFx(tr,id);
   save();
-  if(!quiet) renderMixer();
+  syncMixUI(tr.id,{fx:tr.fx||'off',fxMix:tr.fxMix});
 }
 function setTrackFxMix(tr,v,quiet){
   if(!tr) return;
   tr.fxMix=clamp01(v); busSync(tr); save();
-  if(!quiet) renderMixer();
+  syncMixUI(tr.id,{fx:tr.fx||'off',fxMix:tr.fxMix});
 }
 
 /* 应用一条预设进行（整条替换，标记为手动），并试听新进行的第一个和弦 */
@@ -273,16 +277,23 @@ function applyChordBus(){
 }
 function setChordFx(id){
   chordFx=DELAY_IDS.has(id)?id:'off';
-  applyChordFx();
+  applyChordFx(); save();
+  syncMixUI('chord',{fx:chordFx,fxMix:chordFxMix});
 }
 /* 和弦轨的混音（调音台里那一行）：静音 / 音量 都作用在它自己的总线上，与声部互不干扰 */
 function setChordMute(on,quiet){
   chordMute=!!on; save();
-  if(!quiet){ renderChord(); renderMixer(); }
+  syncMixUI('chord',{mute:chordMute});
+  renderChord(); renderMixer();
 }
 function setChordVolume(v,quiet){
   chordVol=clamp01(v); applyChordBus(); save();
-  if(!quiet) renderMixer();
+  syncMixUI('chord',{vol:chordVol});
+}
+/* 和弦轨延时强度：此前只有调用没有定义（拖 Mix 滑杆会 ReferenceError），补齐并走同步回写 */
+function setChordFxMix(v){
+  chordFxMix=clamp01(v); applyChordFx(); save();
+  syncMixUI('chord',{fx:chordFx,fxMix:chordFxMix});
 }
 function playChordSeg(ch,time){
   try{

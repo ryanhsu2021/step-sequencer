@@ -5,6 +5,39 @@
    ============================================================ */
 /* ============ 渲染：全部声部平铺展示，直接编辑 ============ */
 const view={cards:new Map(),csegs:[]};   // trackId → {el,kind,knobs:[{dial,ring,cap}],nums:[],dc:Map(lane→[cells])}
+/* ---- 混音控件双向同步：声部卡 / 调音台 / 和弦卡是同一份参数的三个视图 ----
+   setTrackXxx / setChordXxx 改完状态后调 syncMixUI(key,vals) 把各处控件值精准回写。
+   不整台重建调音台——innerHTML 重建会把正在拖动的推子节点换掉，拖动手势直接断；
+   此前调音台改音量 / 开关延时后，上方声部卡更是完全不回显（用户看到的「两边对不上」）。
+   key＝trackId；和弦进行轨用 'chord'。回写器由 buildCard / renderChord / mixerStrip 登记进来 */
+const mixBind={card:new Map(),strip:new Map()};
+function syncMixUI(key,vals){
+  const c=mixBind.card.get(key);
+  if(c){
+    if(c.vol&&vals.vol!=null&&c.vol._set) c.vol._set(Math.round(vals.vol*100));
+    if(c.fxSel&&vals.fx!=null&&c.fxSel._set) c.fxSel._set(vals.fx);
+    if(c.fxMix&&vals.fxMix!=null&&c.fxMix._set) c.fxMix._set(Math.round(vals.fxMix*100));
+    if(vals.mute!=null){
+      if(c.muteBtn) c.muteBtn.classList.toggle('m-on',vals.mute);
+      if(c.el) c.el.classList.toggle('muted',vals.mute);
+      if(c.cmuteBtn){ c.cmuteBtn.classList.toggle('off',vals.mute);
+        c.cmuteBtn.textContent=vals.mute?'🔇 和弦声 关':'🔊 和弦声 开'; }
+    }
+    if(vals.solo!=null){
+      if(c.soloBtn) c.soloBtn.classList.toggle('s-on',vals.solo);
+      if(c.el) c.el.classList.toggle('solo',vals.solo);
+    }
+  }
+  const s=mixBind.strip.get(key);
+  if(s){
+    if(s.vol&&vals.vol!=null) s.vol(Math.round(vals.vol*100));
+    if(s.pan&&vals.pan!=null) s.pan(vals.pan);
+    if(s.fx&&vals.fx!=null) s.fx(vals.fx!=='off',vals.fx,
+      Math.round((vals.fxMix==null?1:vals.fxMix)*100));
+    if(s.mute&&vals.mute!=null) s.mute(vals.mute);
+    if(s.solo&&vals.solo!=null) s.solo(vals.solo);
+  }
+}
 function fillInstSelect(sel,cur){
   sel.innerHTML='';
   const groups={};
@@ -50,6 +83,7 @@ function chipFx(tr){
   s.value=tr.fx||'off';
   s.title='本声部延时效果：回声时间与 BPM 自动同步';
   s.addEventListener('change',()=>{setTrackDelay(tr,s.value);toast('「'+tr.name+'」延时 → '+s.options[s.selectedIndex].text);});
+  s._set=id=>{s.value=id||'off';};                // 供 syncMixUI 回写（调音台改了延时 → 卡片下拉跟上）
   return s;
 }
 function chipRange(label,min,max,val,fmt,oninput){
@@ -58,6 +92,7 @@ function chipRange(label,min,max,val,fmt,oninput){
   const r=document.createElement('input'); r.type='range'; r.min=min; r.max=max; r.value=val;
   const v=document.createElement('span'); v.className='v'; v.textContent=fmt(val);
   r.addEventListener('input',()=>{v.textContent=fmt(+r.value);oninput(+r.value);});
+  l._set=x=>{r.value=x;v.textContent=fmt(x);};    // 供 syncMixUI 回写（另一侧改了值 → 滑杆跟上）
   l.append(t,r,v);
   return l;
 }
@@ -80,6 +115,7 @@ function renderTracks(){
   renderChord();
   const stack=$('trackStack');
   stack.innerHTML=''; view.cards.clear();
+  [...mixBind.card.keys()].forEach(k=>{ if(k!=='chord') mixBind.card.delete(k); });
   /* 手风琴一致性：至多一个声部展开。都收起时保持收起（不强制打开）；有多个时只留 openTrackId / 第一个 */
   const opened=state.tracks.filter(t=>t.open!==false);
   if(opened.length>1){
@@ -189,9 +225,11 @@ function renderChord(){
   }));
   /* 和弦轨自己的小节数（与声部无关）+ 音量（无声像） */
   const ctl=head.querySelector('.cc-ctl');
+  let ccVolChip=null;
   if(ctl){
     ctl.appendChild(chipSeg('小节',[1,2,3,4,8],progBars(),n=>setProgBars(n)));
-    ctl.appendChild(chipRange('音量',0,100,Math.round(chordVol*100),v=>v,x=>setChordVolume(x/100)));
+    ccVolChip=chipRange('音量',0,100,Math.round(chordVol*100),v=>v,x=>setChordVolume(x/100));
+    ctl.appendChild(ccVolChip);
   }
   /* 「延时 Mix」紧挨延时预设（下面和 cc-fx 一起包进 .cc-fxwrap），不再和音量挤在一起 */
   const mixChip=chipRange('Mix',0,100,Math.round((chordFxMix==null?1:chordFxMix)*100),v=>v,
@@ -211,6 +249,7 @@ function renderChord(){
     DELAY_PRESETS.forEach(p=>fxSel.add(new Option(p.name,p.id)));
     fxSel.value=chordFx;
     fxSel.title='和弦进行轨的延时效果：回声时间随 BPM 自动同步（试听即时生效）';
+    fxSel._set=id=>{fxSel.value=id||'off';};       // 供 syncMixUI 回写（调音台改了延时 → 这边跟上）
     fxSel.addEventListener('change',()=>{
       setChordFx(fxSel.value); save();
       toast('和弦进行轨延时 → '+fxSel.options[fxSel.selectedIndex].text);
@@ -221,6 +260,10 @@ function renderChord(){
   }else{
     head.appendChild(mixChip);                     // 兜底：没有延时下拉时至少别把 Mix 弄丢
   }
+  /* 登记：调音台和弦条改了音量·延时·Mix → 和弦卡这三件套精准回显（「和弦声 开/关」按钮同理） */
+  mixBind.card.set('chord',{el:null,muteBtn:null,soloBtn:null,
+    vol:ccVolChip,fxSel:fxSel||null,fxMix:mixChip,
+    cmuteBtn:head.querySelector('button[data-act="cmute"]')});
   box.appendChild(head);
 
   const bars=document.createElement('div'); bars.className='cc-bars';
@@ -402,7 +445,8 @@ function mxFxControl(o){
   s.disabled=!on0;
   s.title='「'+o.name+'」延时效果（回声时间随 BPM 自动同步）';
   cb.addEventListener('change',()=>{
-    o.set(on0?'off':(s.value==='off'?'quarter':s.value));
+    /* 用勾选的现值判断（不重建调音台后，回调里捕获的初值会过期） */
+    o.set(cb.checked?(s.value==='off'?'quarter':s.value):'off');
     toast(cb.checked?('🎚 「'+o.name+'」延时已开 → '+s.options[s.selectedIndex].text)
                     :('「'+o.name+'」延时已关'));
   });
@@ -422,6 +466,11 @@ function mxFxControl(o){
   mix.addEventListener('input',()=>{ mv.textContent=mix.value; o.setMix(+mix.value/100); });
   rowB.append(mix,mv);
   wrap.append(rowA,rowB);
+  /* 回写器：另一侧（声部卡 / 和弦卡）改了延时 → 开关、下拉、Mix 三件套一起跟上 */
+  wrap._fx=(on,id,mixPct)=>{
+    cb.checked=on; s.value=id||'off'; s.disabled=!on;
+    mix.value=mixPct; mv.textContent=mixPct; mix.disabled=!on;
+  };
   return wrap;
 }
 /* 一条通道条：上行「色点 · 编号 · 名称/音色 · 效果」，下行「M S · 推子 · 声像」 */
@@ -465,6 +514,7 @@ function mixerStrip(o){
   r.addEventListener('input',()=>{ v.textContent=r.value; o.onVol(+r.value/100); });
   fader.append(r,v);
 
+  let panSet=null;                                 // 声像回写器（鼓 / 和弦轨没有声像，null）
   const pan=document.createElement('span'); pan.className='mx-pan';
   if(o.pan==null||o.panOff){
     pan.classList.add('mx-pan-off'); pan.textContent='—';
@@ -474,6 +524,8 @@ function mixerStrip(o){
     pr.value=Math.round(o.pan*100); pr.title='「'+o.name+'」声像：L 左 / R 右';
     const pv=document.createElement('span'); pv.className='mx-v';
     pv.textContent=(o.pan>0?'R':o.pan<0?'L':'C')+Math.abs(Math.round(o.pan*100));
+    panSet=x=>{ pr.value=Math.round(x*100);
+      pv.textContent=(x>0?'R':x<0?'L':'C')+Math.abs(Math.round(x*100)); };
     pr.addEventListener('input',()=>{
       const x=+pr.value;
       pv.textContent=(x>0?'R':x<0?'L':'C')+Math.abs(x);
@@ -483,6 +535,14 @@ function mixerStrip(o){
   }
 
   row.append(dot,tag,cap,fx,ctl,fader,pan);
+  /* 登记：setTrackVol 等改完状态后按 id 精准回写这根推子 / 声像 / 延时三件套 / M / S */
+  if(o.id!=null) mixBind.strip.set(o.id,{
+    vol:x=>{ r.value=x; v.textContent=x; },
+    pan:panSet,
+    fx:(o.fxEl&&o.fxEl._fx)||null,
+    mute:on=>{ mb.classList.toggle('on',on); row.classList.toggle('mx-muted',on); },
+    solo:on=>sb.classList.toggle('on',on),
+  });
   return row;
 }
 /* 渲染整台调音台：纵向各声部 + 和弦进行轨总线（横向换行，一行至少放得下 3 条） */
@@ -491,6 +551,7 @@ function renderMixer(){
   const soloSome=soloActive();
   const on=isPlaying;
   box.innerHTML='';
+  mixBind.strip.clear();                           // 旧通道条 DOM 全部丢弃，登记表一并作废
   const head=document.createElement('div'); head.className='mx-head';
   head.innerHTML=
     '<span class="mx-icon">🎚</span><span class="mx-title">调音台 Mixer</span>'+
@@ -506,7 +567,7 @@ function renderMixer(){
   state.tracks.forEach((tr,i)=>{
     const drum=tr.kind==='drum';
     grid.appendChild(mixerStrip({
-      kind:'track',tag:String(i+1),name:tr.name,bg:tr.color&&tr.color.bg,
+      id:tr.id,kind:'track',tag:String(i+1),name:tr.name,bg:tr.color&&tr.color.bg,
       title:'第 '+(i+1)+' 个声部「'+tr.name+'」',mute:!!tr.mute,solo:!!tr.solo,canSolo:true,
       sub:drum?('鼓机 · '+INST_NAME(tr.inst)):shortInst(tr.inst),
       subFull:drum?'鼓机合成音源':INST_NAME(tr.inst),
@@ -532,7 +593,7 @@ function renderMixer(){
   });
   /* 和弦进行轨：它也有自己的总线（音量 / 静音 / 延时都能在这调） */
   grid.appendChild(mixerStrip({
-    kind:'chord',tag:'♩',name:'和弦进行轨',bg:'#141414',
+    id:'chord',kind:'chord',tag:'♩',name:'和弦进行轨',bg:'#141414',
     title:'和弦进行轨的总线',mute:!!chordMute,solo:false,canSolo:false,
     sub:shortInst(chordInstOf()),subFull:'和弦音色：'+INST_NAME(chordInstOf()),
     fxEl:mxFxControl({
@@ -628,6 +689,7 @@ function buildCard(tr,i){
 
   /* ---- 参数行（DAW 式分区：编排 · 鼓组/和声 · 音色 · 混音 · 效果） ---- */
   const meta=document.createElement('div'); meta.className='tc-meta';
+  let volChip=null,fxSelEl=null,fxMixChip=null;    // 混音控件引用（卡尾登记进 mixBind，供双向回写）
   const tmGroup=(lb)=>{
     const g=document.createElement('span'); g.className='tm-group';
     if(lb){ const t=document.createElement('span'); t.className='tm-lb'; t.textContent=lb; g.appendChild(t); }
@@ -666,7 +728,8 @@ function buildCard(tr,i){
     }
     /* 鼓组：不要延时效果（鼓点加回声容易糊），改为音量控制（与调音台推子同一份状态） */
     const gMix=tmGroup('混音');
-    gMix.appendChild(chipRange('音量',0,100,Math.round((tr.vol==null?.85:tr.vol)*100),v=>v,x=>setTrackVol(tr,x/100)));
+    volChip=chipRange('音量',0,100,Math.round((tr.vol==null?.85:tr.vol)*100),v=>v,x=>setTrackVol(tr,x/100));
+    gMix.appendChild(volChip);
   }else{
     /* 「跟随和弦进行」开关：开启时该声部音高实时随和弦轨吸附（改和弦即跟随），
        关闭时不动音高；回到和弦内音不再二次改动（幂等）。✨/🎼 恒用和弦轨做和声 */
@@ -691,12 +754,19 @@ function buildCard(tr,i){
     oct.addEventListener('change',()=>{tr.oct=+oct.value;refreshSub(tr);refreshAll();save();});
     gVoice.append(sel,oct);
     const gMix=tmGroup('混音');
-    gMix.appendChild(chipRange('音量',0,100,Math.round(tr.vol*100),v=>v,x=>setTrackVol(tr,x/100)));
+    volChip=chipRange('音量',0,100,Math.round(tr.vol*100),v=>v,x=>setTrackVol(tr,x/100));
+    gMix.appendChild(volChip);
     const gFx=tmGroup('效果');
-    gFx.appendChild(chipFx(tr));
-    gFx.appendChild(chipRange('强度',0,100,Math.round((tr.fxMix==null?1:tr.fxMix)*100),v=>v,x=>setTrackFxMix(tr,x/100)));
+    fxSelEl=chipFx(tr); gFx.appendChild(fxSelEl);
+    fxMixChip=chipRange('强度',0,100,Math.round((tr.fxMix==null?1:tr.fxMix)*100),v=>v,x=>setTrackFxMix(tr,x/100));
+    gFx.appendChild(fxMixChip);
   }
   pane.appendChild(meta);
+  /* 登记：调音台 / 其他入口改了音量·延时·强度·M·S → 这张卡的控件精准回显 */
+  mixBind.card.set(tr.id,{el,
+    muteBtn:el.querySelector('button[data-act="mute"]'),
+    soloBtn:el.querySelector('button[data-act="solo"]'),
+    vol:volChip,fxSel:fxSelEl,fxMix:fxMixChip});
 
   /* ---- 步进区 ---- */
   if(tr.kind==='inst'){

@@ -75,6 +75,8 @@ class El{
   click(){}
   /* 触发事件：让「点击 M / 改下拉 / 拖推子」这类交互在测试里真的跑一遍（顺带抓运行时错误） */
   fire(type,ev){
+    /* 真浏览器：点击 checkbox 先翻转 checked 再派发 change——桩照做（回调读的是 checked 现值） */
+    if(type==='change'&&this.type==='checkbox') this.checked=!this.checked;
     const hs=this._handlers&&this._handlers[type]; if(!hs) return;
     const e=Object.assign({type,target:this,currentTarget:this,stopPropagation(){},preventDefault(){}},ev||{});
     for(const h of hs) h(e);
@@ -174,14 +176,14 @@ const expose=`
   setProgBars,progBeats,makeTrack,progTiled,randomSameStyle,reharmonizeTrack,
   velOf,pushUndo,undo,undoDepth:()=>undoStack.length,
   DELAY_PRESETS,REV_PRESETS,setTrackFx,setReverb,revGetter:()=>revPreset,trackFx:t=>t.fx,setRevMix:v=>{revMix=v;},getRevMix:()=>revMix,
-  setChordFx,applyChordFx,chordFxGetter:()=>chordFx,getChordFxMix:()=>chordFxMix,setChordFxMix:v=>{chordFxMix=v;},chordBusId:CHORD_BUS_ID,
+  setChordFx,applyChordFx,chordFxGetter:()=>chordFx,getChordFxMix:()=>chordFxMix,setChordFxMix,chordBusId:CHORD_BUS_ID,
   planToChords,setProgPlan,progKeyOf,planRoman,modeIdx:()=>modeIdx,PLAN_LIB,PROG_PLANS,STYLE,ROMAN,
   rateOf,rateName,spanOf,setRate,loopSteps,RATE_VALUES,
   toggleOpen,toggleFollow,isFollowing,applyFollow,syncFollowers,openId:()=>openTrackId,followOf:t=>!!t.follow,
   renderTracks,chordTones,followRow,playMidiOf,
   renderMixer,mixerCard:()=>$('mixerCard'),setTrackVol,setTrackPan,setTrackMute,setTrackSolo,setTrackDelay,setTrackFxMix,
   setChordMute,setChordVolume,chordMuteGetter:()=>chordMute,chordVolGetter:()=>chordVol,
-  setChordFxMix:v=>{chordFxMix=v;},isPlayingGetter:()=>isPlaying,shortInst,
+  setChordFxMix,isPlayingGetter:()=>isPlaying,shortInst,
   cardOf:id=>view.cards.get(id),
   analyzeMelody,preferProg,mkChord,setProg,progBars,progBeats,chordFramesAt,inChord:null};`;
 try{ vm.runInContext(js+expose,sandbox); }catch(e){ console.log('LOAD_FAIL:',e.stack); process.exit(1); }
@@ -1034,6 +1036,44 @@ if(dTr){
   }
 }
 T.setTrackVol(gTr,.85);
+T.renderTracks();
+
+/* ---- 双向同步补验：调音台 ↔ 声部卡 ↔ 和弦卡互为镜像（此前只有「卡片→调音台」单向） ---- */
+{
+  const grpOf=(card,label)=>{ for(const g of card.el.querySelectorAll('.tm-group')){
+    const lb=g.querySelector('.tm-lb'); if(lb&&lb.textContent===label) return g; } return null; };
+  const strip0=T.mixerCard().querySelectorAll('.mx-strip')[0];
+  /* 调音台推子 → 声部卡音量滑杆回显 */
+  const mxFader=strip0.querySelector('.mx-fader input');
+  mxFader.value=46; mxFader.fire('input');
+  const cVolG=grpOf(T.cardOf(gTr.id),'混音');
+  const cRange=cVolG&&cVolG.querySelector('input[type=range]');
+  chk('调音台拖推子 → 声部卡音量滑杆回显（46）',!!cRange&&cRange.value==='46','v='+(cRange&&cRange.value));
+  /* 调音台打开延时开关 → 声部卡延时下拉回显 */
+  const cFxG=grpOf(T.cardOf(gTr.id),'效果');
+  const cFxSel=cFxG&&cFxG.querySelector('select');
+  const mxSw=strip0.querySelector('.mx-fxwrap input[type=checkbox]');
+  T.setTrackDelay(gTr,'off');                    // 从「关」起步，避免受前文遗留状态影响
+  mxSw.fire('change');                           // 桩会翻转 checked → 打开
+  chk('调音台打开延时 → 声部卡延时下拉回显（1/4）',!!cFxSel&&cFxSel.value==='quarter','v='+(cFxSel&&cFxSel.value));
+  /* 调音台 Mix 滑杆 → 声部卡强度滑杆回显 */
+  const mxMix=strip0.querySelector('.mx-fxrow input[type=range]');
+  mxMix.value=30; mxMix.fire('input');
+  const cMixR=cFxG&&cFxG.querySelector('input[type=range]');
+  chk('调音台调 Mix → 声部卡强度滑杆回显（30）',!!cMixR&&cMixR.value==='30','v='+(cMixR&&cMixR.value));
+  /* 反向：声部卡换延时 → 调音台开关回显勾上 */
+  cFxSel.value='slap'; cFxSel.fire('change');
+  chk('声部卡换延时 → 调音台开关回显勾上',!!mxSw&&mxSw.checked===true,'checked='+(mxSw&&mxSw.checked));
+  /* setChordFxMix 此前只有调用没有定义（拖和弦卡 Mix 直接 ReferenceError）：现在生效且三处同步 */
+  T.setChordFxMix(.35);
+  const ccMix=document.getElementById('chordCard').querySelector('.cc-fxwrap input[type=range]');
+  const stripsAll=T.mixerCard().querySelectorAll('.mx-strip');
+  const chMixR=stripsAll[stripsAll.length-1].querySelector('.mx-fxrow input[type=range]');
+  chk('setChordFxMix 生效（和弦卡 Mix 回显 35）',!!ccMix&&ccMix.value==='35','v='+(ccMix&&ccMix.value));
+  chk('setChordFxMix 生效（调音台和弦条 Mix 回显 35）',!!chMixR&&chMixR.value==='35','v='+(chMixR&&chMixR.value));
+  /* 还原现场（后面的存档 / 读档断言依赖默认状态） */
+  T.setTrackDelay(gTr,'off'); T.setTrackFxMix(gTr,1); T.setChordFxMix(1);
+}
 T.renderTracks();
 
 console.log('== 19. 🎼 一键编配 v2：分析旋律 → 更贴合的编配 ==');
