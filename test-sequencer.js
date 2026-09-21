@@ -180,7 +180,8 @@ const expose=`
   planToChords,setProgPlan,progKeyOf,planRoman,modeIdx:()=>modeIdx,PLAN_LIB,PROG_PLANS,STYLE,ROMAN,
   rateOf,rateName,spanOf,setRate,loopSteps,RATE_VALUES,
   toggleOpen,toggleFollow,isFollowing,applyFollow,syncFollowers,openId:()=>openTrackId,followOf:t=>!!t.follow,
-  toggleArp,setArpMode,arpRow,arpPoolAt,arpHitIdx,arpOn,ARP_MODE_NAME,
+  toggleArp,setArpMode,setArpRate,arpRow,arpPoolAt,arpHitIdx,arpOn,arpFires,ARP_MODE_NAME,ARP_RATE_NAME,ARP_RATE_SHORT,
+  setMode:v=>{modeIdx=v;},
   renderTracks,chordTones,followRow,playMidiOf,
   renderMixer,mixerCard:()=>$('mixerCard'),setTrackVol,setTrackPan,setTrackMute,setTrackSolo,setTrackDelay,setTrackFxMix,
   setChordMute,setChordVolume,chordMuteGetter:()=>chordMute,chordVolGetter:()=>chordVol,
@@ -1326,6 +1327,108 @@ const ucard2=T.cardOf(ub.id);
 const sumTxt=ucard2.el.querySelector('.tc-sum .s-sum');
 chk('收起摘要含「🎼 琶音·下行」',!!sumTxt&&sumTxt.textContent.indexOf('琶音·下行')>=0,
     'sum='+(sumTxt&&sumTxt.textContent));
+
+/* ============================================================
+   21. 琶音节奏档（跟画 / 1/16 · 1/8 · 1/4）+ 琶音跟随和弦进行
+   ============================================================ */
+console.log('\n--- 21. 琶音节奏档 + 跟随和弦进行 ---');
+/* 干净的声部：16 步里画 3 个音（步 0·5·9），自动档下触发 / 让位可精确预测 */
+T.state.tracks.length=0;
+const ra=T.makeTrack('inst','ra','piano',0);
+T.state.tracks.push(ra);
+ra.seq=new Array(16).fill(-1); ra.seq[0]=0; ra.seq[5]=5; ra.seq[9]=2;
+ra.arp={on:true,mode:'up',rate:0};
+const rSeq21=ra.seq.slice();                       // 非破坏性基线
+/* 跟画档（默认 rate=0）：画了才响，空步静默 */
+chk('跟画档：arpFires 跟随画的音符',
+    ra.arp.rate===0&&T.arpFires(ra,0)===true&&T.arpFires(ra,1)===false&&T.arpFires(ra,5)===true);
+chk('跟画档：followRow 空步返回 -1、画步发声',
+    T.followRow(ra,1)===-1&&T.followRow(ra,0)>=0);
+/* 1/8 档（每 2 格一音）：偶数格全响（画没画都响），奇数格让位 */
+T.setArpRate(ra,2);
+chk('setArpRate：档位写入 tr.arp.rate',ra.arp.rate===2);
+chk('1/8 档：偶数格全响（含没画的格）',
+    [0,2,4,6,8,10,14].every(s=>T.arpFires(ra,s)===true));
+chk('1/8 档：奇数格不触发（让位）',
+    [1,3,5,7,9].every(s=>T.arpFires(ra,s)===false));
+chk('1/8 档：followRow 奇数格 -1、偶数格发声',
+    T.followRow(ra,1)===-1&&T.followRow(ra,9)===-1&&T.followRow(ra,2)>=0&&T.followRow(ra,4)>=0);
+chk('1/8 档：图案序号等差直算 ceil(s/r)',
+    T.arpHitIdx(ra,0)===0&&T.arpHitIdx(ra,2)===1&&T.arpHitIdx(ra,4)===2&&T.arpHitIdx(ra,6)===3);
+/* 1/4 档（每 4 格一音） */
+T.setArpRate(ra,4);
+chk('1/4 档：s%4===0 触发、其余静默',
+    T.arpFires(ra,0)===true&&T.arpFires(ra,4)===true&&T.arpFires(ra,8)===true
+      &&T.arpFires(ra,2)===false&&T.arpFires(ra,9)===false);
+chk('1/4 档：图案序号 ceil(s/4)',T.arpHitIdx(ra,8)===2);
+/* 1/16 档（每格一音）：16 步全触发 */
+T.setArpRate(ra,1);
+chk('1/16 档：16 步全部触发',Array.from({length:16},(_,s)=>s).every(s=>T.arpFires(ra,s)===true));
+/* 非破坏性：整轮节奏切换 tr.seq 一字不改 */
+chk('节奏档切换全程 tr.seq 一字不改（非破坏性）',String(ra.seq)===String(rSeq21));
+/* ---- 琶音跟随和弦进行：改和弦 → 音池与实际发声音高实时跟着变 ---- */
+T.setMode(0);                                      // 固定七声调式（大调）：断言可精确预测
+T.setArpRate(ra,1);                                // 1/16：步 0 必触发；模式 up、k=0 → 音池最低音
+const poolA=T.arpPoolAt(ra,0), before=T.followRow(ra,0);
+chk('音池来自当前和弦（非空，发声行在音池内）',
+    !!poolA&&poolA.length>=3&&poolA.indexOf(before)>=0,'pool='+poolA);
+const oldRoot21=T.state.prog[0].root, L21=T.scLen();
+T.state.prog[0]=T.mkChord((oldRoot21+2)%L21,T.state.prog[0].beats,T.state.prog[0].seventh);   // 换和弦（mkChord 重建 tones）
+T.syncFollowers();
+const poolB=T.arpPoolAt(ra,0), after=T.followRow(ra,0);
+chk('改和弦 → 音池实时跟着变',!!poolB&&String(poolA)!==String(poolB),'A='+poolA+' B='+poolB);
+chk('改和弦 → 实际发声音高换到新和弦集内',
+    after!==before&&poolB.indexOf(after)>=0,'before='+before+' after='+after);
+T.state.prog[0]=T.mkChord(oldRoot21,T.state.prog[0].beats,T.state.prog[0].seventh);           // 换回原和弦
+T.syncFollowers();
+chk('换回原和弦 → 发声音高复原',T.followRow(ra,0)===before);
+/* ---- 存档：arpRate 持久化 ---- */
+T.setArpRate(ra,2); T.save();
+const raw21=JSON.parse(localStorage.getItem('polyseq.v7')||'{}');
+chk('存档含 arpRate=2',
+    !!(raw21.tracks&&raw21.tracks[0])&&raw21.tracks[0].arpRate===2,
+    'arpRate='+(raw21.tracks&&raw21.tracks[0]?raw21.tracks[0].arpRate:'无'));
+/* ---- 旧档（无 arpRate 字段）：安全回落 0 跟画 ---- */
+store['polyseq.v7']=JSON.stringify({tracks:[{id:1,kind:'inst',name:'旧',inst:'piano',oct:0,bars:1,rate:1,seq:[-1],vol:.85,pan:0,mute:false,solo:false,fx:'off',fxMix:1,p:{}}],prog:[],progEdited:false,progBars:1});
+T.loadSaved();
+const la21=T.state.tracks[0];
+chk('旧档读取：arpRate 安全回落 0（跟画）',
+    la21.arp&&la21.arp.rate===0&&la21.arp.on===false,'arp='+JSON.stringify(la21.arp));
+/* ---- undo：快照含 arpRate ---- */
+const uc=T.makeTrack('inst','uc','piano',0);
+T.state.tracks.length=0; T.state.tracks.push(uc);
+uc.seq=new Array(16).fill(-1); uc.seq[0]=4;
+uc.arp={on:true,mode:'up',rate:4};
+T.pushUndo();                                      // 快照：rate=4
+T.setArpRate(uc,2);
+chk('setArpRate：改档生效',uc.arp.rate===2);
+T.undo();
+const ud=T.state.tracks[0];                        // undo 按快照重建声部对象：必须重取活动引用
+chk('undo：恢复 rate=4（快照含节奏档）',ud.arp.rate===4,'arp='+JSON.stringify(ud.arp));
+/* ---- UI：节奏下拉 ---- */
+T.renderTracks();
+const rc21=T.cardOf(ud.id);
+const rSel=rc21&&rc21.el.querySelector('select.arp-rate');
+chk('节奏下拉存在、开关开着时可用、值正确',
+    !!rSel&&rSel.disabled===false&&rSel.value==='4','sel='+(rSel?'value='+rSel.value+' disabled='+rSel.disabled:'无'));
+rSel.value='2'; rSel.fire('change');
+chk('下拉改节奏 → tr.arp.rate 跟着变',ud.arp.rate===2,'rate='+ud.arp.rate);
+const sumR=(T.cardOf(ud.id).el.querySelector('.tc-sum .s-sum')||{textContent:''}).textContent;
+chk('改档后摘要即时更新（含 ·1/8）',sumR.indexOf('·1/8')>=0,'sum='+sumR);
+T.setArpMode(ud,'updown');
+const sumM=(T.cardOf(ud.id).el.querySelector('.tc-sum .s-sum')||{textContent:''}).textContent;
+chk('改图案后摘要即时更新（含 上下）',sumM.indexOf('上下')>=0,'sum='+sumM);
+/* 开关关掉 → 下拉禁用但值保留 */
+T.toggleArp(ud);                                   // → 关（内部 renderTracks 重建卡片）
+const rc22=T.cardOf(ud.id);
+const rSel2=rc22&&rc22.el.querySelector('select.arp-rate');
+chk('琶音关闭 → 节奏下拉禁用（值保留）',
+    !!rSel2&&rSel2.disabled===true&&rSel2.value==='2'&&ud.arp.rate===2);
+/* 摘要行：自动档追加「·1/8」短名 */
+T.toggleArp(ud);                                   // → 再开（内部 renderTracks）
+const sum21=T.cardOf(ud.id).el.querySelector('.tc-sum .s-sum');
+chk('收起摘要含「琶音·上下·1/8」',
+    !!sum21&&sum21.textContent.indexOf('琶音·上下·1/8')>=0,'sum='+(sum21&&sum21.textContent));
 
 console.log('\n=== '+(fail?fail+' 项失败':'全部通过')+'（'+pass+' 通过 / '+fail+' 失败）===');
 process.exit(fail?1:0);

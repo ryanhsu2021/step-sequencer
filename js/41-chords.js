@@ -198,9 +198,9 @@ function planRoman(p){
    纯函数：不读写任何持久状态，因此可安全地在调度热路径里反复调用。 */
 function followRow(tr,s){
   if(!tr||tr.kind!=='inst') return tr?tr.seq[s]:-1;
+  if(tr.arp&&tr.arp.on) return arpFires(tr,s)?arpRow(tr,s):-1;   // 琶音接管发声判定：自动节奏档在没画的格也按拍触发
   const r=tr.seq[s];
   if(r==null||r<0) return r;
-  if(tr.arp&&tr.arp.on) return arpRow(tr,s);      // 琶音模式：音高由和弦音池按图案生成（优先于跟随折算）
   if(!isFollowing(tr)) return r;
   const ca=chordAtFor(state.prog,stepsOf(tr));
   const set=ca&&ca[s];
@@ -256,7 +256,18 @@ function reharmonizeTrack(tr){
    纯函数：不写任何持久状态，调度热路径可安全反复调用。 */
 const ARP_MODE_IDS=['up','down','updown','random'];
 const ARP_MODE_NAME={up:'上行',down:'下行',updown:'上下',random:'随机'};
+/* 琶音节奏档：0 跟画（画了才响）/ 1·2·4＝每 1·2·4 格一音（以声部「速度」档的格子为基准，
+   速度 1/16 时即 1/16 · 1/8 · 1/4——经典合成器琶音的「按拍自动滚」）。
+   自动档下画的音符暂时让位（原样保留，切回跟画即复原），音高始终实时取自当前和弦。 */
+const ARP_RATES=[0,1,2,4];
+const ARP_RATE_NAME={0:'跟画',1:'1/16（每格）',2:'1/8（每 2 格）',4:'1/4（每 4 格）'};
+const ARP_RATE_SHORT={0:'跟画',1:'1/16',2:'1/8',4:'1/4'};
 const arpOn=tr=>!!tr&&tr.kind==='inst'&&!!(tr.arp&&tr.arp.on);
+/* 该步是否发声：跟画档＝画了才响；自动档＝按节拍滚（画没画都响） */
+function arpFires(tr,s){
+  const r=((tr.arp&&tr.arp.rate)|0)||0;
+  return r>=1 ? (s%r===0) : tr.seq[s]>=0;
+}
 /* 当前步所属和弦的和弦音行（音高升序：r 越大音越低，所以从大到小遍历） */
 function arpPoolAt(tr,s){
   const ca=chordAtFor(state.prog,stepsOf(tr));
@@ -266,10 +277,12 @@ function arpPoolAt(tr,s){
   for(let r=ROWS-1;r>=0;r--) if(set.has(degOfRow(r))) rows.push(r);
   return rows.length?rows:null;
 }
-/* 本轮循环内该步是第几个命中音（0-based）——空步不推进图案 */
+/* 该步是本轮循环里的第几个触发音（0-based）——决定它拿音池里的第几个音 */
 function arpHitIdx(tr,s){
+  const r=((tr.arp&&tr.arp.rate)|0);
+  if(r>=1) return Math.ceil(s/r);                 // 自动节奏档：触发步等距（r 格一音），序号直算
   let c=0;
-  for(let i=0;i<s;i++) if(tr.seq[i]>=0) c++;
+  for(let i=0;i<s;i++) if(tr.seq[i]>=0) c++;      // 跟画档：数排在前面的命中（空步不推进图案）
   return c;
 }
 /* 该步琶音实际发声的行号（无音池时兜底原样返回） */
@@ -290,7 +303,7 @@ function arpRow(tr,s){
 /* 「琶音」开关：开启后画的音符只当节奏用（音序数据不动，关掉立即复原） */
 function toggleArp(tr){
   if(!tr||tr.kind!=='inst') return;
-  if(!tr.arp) tr.arp={on:false,mode:'up'};
+  if(!tr.arp) tr.arp={on:false,mode:'up',rate:0};
   tr.arp.on=!tr.arp.on;
   renderTracks(); save();
   toast(tr.arp.on
@@ -300,14 +313,29 @@ function toggleArp(tr){
 /* 琶音图案：up / down / updown / random（开关开着才重画幽灵标记） */
 function setArpMode(tr,m){
   if(!tr||tr.kind!=='inst') return;
-  if(!tr.arp) tr.arp={on:false,mode:'up'};
+  if(!tr.arp) tr.arp={on:false,mode:'up',rate:0};
   tr.arp.mode=ARP_MODE_IDS.indexOf(m)>=0?m:'up';
   if(tr.arp.on){
     const card=view.cards.get(tr.id);
-    if(card&&card.kind==='inst') refreshAllSteps(tr);
+    if(card&&card.kind==='inst'){ refreshAllSteps(tr); refreshSummary(tr); }   // 摘要行的图案名也要跟上
   }
   save();
   toast('🎼 「'+tr.name+'」琶音图案 → '+(ARP_MODE_NAME[tr.arp.mode]||'上行')+(tr.arp.on?'':'（琶音开关目前是关的）'));
+}
+/* 琶音节奏：0 跟画 / 1·2·4 每格·每 2 格·每 4 格（以「速度」档的格子为基准）。自动档下画的音符让位给节拍滚 */
+function setArpRate(tr,r){
+  if(!tr||tr.kind!=='inst') return;
+  if(!tr.arp) tr.arp={on:false,mode:'up',rate:0};
+  const q=r|0;
+  tr.arp.rate=ARP_RATES.indexOf(q)>=0?q:0;
+  if(tr.arp.on){
+    const card=view.cards.get(tr.id);
+    if(card&&card.kind==='inst'){ refreshAllSteps(tr); refreshSummary(tr); }   // 摘要行的节奏短名（·1/8 等）也要跟上
+  }
+  save();
+  toast('🎼 「'+tr.name+'」琶音节奏 → '+(ARP_RATE_NAME[tr.arp.rate]||'跟画')
+    +(tr.arp.rate>=1?'——按节拍自动滚，画的音符暂时让位（原样保留）':'——按你画的节奏发声')
+    +(tr.arp.on?'':'（琶音开关目前是关的）'));
 }
 /* 和弦轨变化后：跟随声部的音高由 followRow 在播放时实时折算，琶音声部的音池也随和弦实时变化，
    这里只需重画面板提示。返回是否有跟随 / 琶音声部（用于 toast 判断）。 */

@@ -66,8 +66,9 @@ function exportMidi(){
     const ev=[], ch=midiChan(tr), n=stepsOf(tr), stepT=(PPQ/4)*rateOf(tr);   // 每步时值随该声部速度缩放
     if(tr.kind==='inst'){
       for(let s=0;s<n;s++){
-        if(tr.seq[s]===-1) continue;
-        const nte=clamp(rowMidi(followRow(tr,s),tr.oct),0,127);   // 跟随和弦：导出用折算后的音高
+        const fr=followRow(tr,s);                 // 实际发声行：琶音自动节奏档（1/16·1/8·1/4）没画的格也按拍触发
+        if(fr==null||fr<0) continue;              // 跟画没画 / 自动档不触发 → 不发声（与播放路径同一判定）
+        const nte=clamp(rowMidi(fr,tr.oct),0,127);   // 跟随和弦 / 琶音：导出用折算 / 生成后的音高
         const vv=velOf(tr,s)==null?88:clamp(Math.round(velOf(tr,s)*127),1,127);
         ev.push({tick:s*stepT,seq:1,bytes:[0x90|ch,nte,vv]});
         ev.push({tick:(s+1)*stepT,seq:0,bytes:[0x80|ch,nte,0]});

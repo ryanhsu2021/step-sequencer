@@ -740,9 +740,10 @@ function buildCard(tr,i){
     fol.setAttribute('role','switch');
     fol.setAttribute('aria-checked',tr.follow?'true':'false');
     fol.innerHTML='<span class="sw-lb">跟随和弦</span><span class="sw-track"><i></i></span>';
-    fol.title=tr.follow
+    fol.title=(tr.follow
       ?'跟随和弦进行：已开启——调整上方和弦轨时，本声部音高会自动吸附到和弦音（已落在和弦内的音不会二次改动）。点一下关闭'
-      :'跟随和弦进行：已关闭——播放与编辑互不干扰。点一下开启，现有音符会立即吸附一次，之后继续跟随';
+      :'跟随和弦进行：已关闭——播放与编辑互不干扰。点一下开启，现有音符会立即吸附一次，之后继续跟随')
+      +(arpOn(tr)?'（注：琶音开启时发声由琶音接管，本开关的音高折算暂不参与——关闭琶音即恢复）':'');
     fol.addEventListener('click',()=>toggleFollow(tr));
     gHar.appendChild(fol);
     /* 「琶音」开关 + 图案下拉：开启后画下的音符只当节奏用，实际音高按图案从当前和弦生成
@@ -763,9 +764,22 @@ function buildCard(tr,i){
     ARP_MODE_IDS.forEach(id=>arpSel.add(new Option(ARP_MODE_NAME[id],id)));
     arpSel.value=(tr.arp&&tr.arp.mode)||'up';
     arpSel.disabled=!arpOn(tr);
-    arpSel.title='琶音图案：上行（顺着爬）／下行（倒着走）／上下（到顶折返、端点不重复）／随机（同一格每轮同音，预览即实际）';
+    arpSel.title='琶音图案：上行（顺着爬）／下行（倒着走）／上下（到顶折返、端点不重复）／随机（同一格每轮同音，预览即实际）。'+
+      '音高音池实时取自上方和弦进行轨——改和弦、换进行、调拍长，琶音都跟着变';
     arpSel.addEventListener('change',()=>setArpMode(tr,arpSel.value));
     gHar.appendChild(arpSel);
+    /* 「节奏」下拉：跟画（画了才响）/ 1/16 · 1/8 · 1/4（按节拍自动滚，画没画的格也响，画的让位但保留） */
+    const arpRateSel=document.createElement('select');
+    arpRateSel.className='arp-rate';
+    [[0,'跟画 · 按画的节奏'],[1,'1/16 · 每格'],[2,'1/8 · 每 2 格'],[4,'1/4 · 每 4 格']]
+      .forEach(p=>arpRateSel.add(new Option(p[1],String(p[0]))));
+    arpRateSel.value=String((tr.arp&&tr.arp.rate)|0);
+    arpRateSel.disabled=!arpOn(tr);
+    arpRateSel.title='琶音节奏：跟画＝按你画的音符节奏发声（空步不响）；'+
+      '1/16 / 1/8 / 1/4＝按节拍自动滚（每 1 / 2 / 4 格响一次，画没画的格子也会响，画下的音符让位变暗但原样保留，切回跟画即复原）。'+
+      '格子时值以本声部「速度」档为基准（速度 1/16 时，1/8 档即每 2 格一音）';
+    arpRateSel.addEventListener('change',()=>setArpRate(tr,+arpRateSel.value));
+    gHar.appendChild(arpRateSel);
     const gVoice=tmGroup('音色');
     const sel=document.createElement('select'); fillInstSelect(sel,tr.inst);
     sel.addEventListener('change',()=>{tr.inst=sel.value;refreshSub(tr);save();});
@@ -815,7 +829,10 @@ function refreshSummary(tr){
     parts.push(INST_NAME(tr.inst));
     parts.push(notes+' 音');
     if(tr.follow) parts.push('🔗 跟随和弦');
-    if(arpOn(tr)) parts.push('🎼 琶音·'+(ARP_MODE_NAME[(tr.arp&&tr.arp.mode)||'up']||'上行'));
+    if(arpOn(tr)){
+      const ar=(tr.arp&&tr.arp.rate)|0;
+      parts.push('🎼 琶音·'+(ARP_MODE_NAME[(tr.arp&&tr.arp.mode)||'up']||'上行')+(ar>=1?'·'+(ARP_RATE_SHORT[ar]||'跟画'):''));
+    }
   }
   s.textContent=parts.join(' · ');
 }
@@ -1031,7 +1048,9 @@ function refreshStepCell(tr,s){
   /* 跟随和弦 / 琶音：音序格位置不动（r），但实际发声可能被折算 / 生成到别的行（fr）。
      用 .ghost 在「实际发声行」画一枚淡色标记，让你看见它到底播成什么音。 */
   const arp=arpOn(tr);
-  const fr=(r!==-1)?followRow(tr,s):-1;
+  const rate=arp?((tr.arp&&tr.arp.rate)|0):0;
+  const fireOK=!arp||arpFires(tr,s);                    // 自动节奏档：没画的格也按拍触发
+  const fr=(r!==-1||fireOK)?followRow(tr,s):-1;
   const shifted=(fr!==r&&fr!==-1);
   const ghostTag=arp?'🎼 琶音 → 实际发 ':'🔗 跟随和弦 → 实际发 ';
   const ghostFull=arp?'琶音图案生成的实际发声音高 ':'跟随和弦后的实际发声音高 ';
@@ -1039,15 +1058,18 @@ function refreshStepCell(tr,s){
     const cell=col[i]; if(!cell) continue;
     cell.classList.toggle('on',i===r);
     cell.classList.toggle('anchor',i===r&&on);            // 手摆的音（✨ 的锚点）：加一圈描边
+    cell.classList.toggle('paintmute',arp&&!fireOK&&i===r); // 自动档本步不触发：画的音符让位变暗（原样保留）
     cell.classList.toggle('ghost',shifted&&i===fr);       // 跟随折算 / 琶音生成后的实际发声位置
     cell.style.setProperty('--v',r===i?(v==null?.82:v):0); // 力度→格子不透明度
     const tail='（第 '+(degOfRow(i)+1)+' 级）';
     if(i===r){
       cell.title='第 '+(s+1)+' 步 · '+noteName(rowMidi(i,tr.oct))+tail+
         (shifted?' · '+ghostTag+noteName(rowMidi(fr,tr.oct))+(arp?'（第 '+(arpHitIdx(tr,s)+1)+' 个和弦音）':''):'')+
+        (arp&&!fireOK?' · 🎼 '+ARP_RATE_SHORT[rate]+'自动档本步不触发（让位，原样保留）':'')+
         ' · 力度 '+(v==null?'默认 82':Math.round(v*100)+'%');
     }else if(shifted&&i===fr){
-      cell.title='第 '+(s+1)+' 步 · '+ghostFull+noteName(rowMidi(i,tr.oct))+tail;
+      cell.title='第 '+(s+1)+' 步 · '+ghostFull+noteName(rowMidi(i,tr.oct))+tail+
+        (arp&&rate>=1?'（'+ARP_RATE_SHORT[rate]+'·按拍自动滚）':'');
     }else{
       cell.title='第 '+(s+1)+' 步 · '+noteName(rowMidi(i,tr.oct))+tail+'（点这里放置音符）';
     }
