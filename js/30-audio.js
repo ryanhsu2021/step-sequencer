@@ -7,27 +7,37 @@
 let audioCtx=null, masterGain=null;
 let bpm=112, swingPct=0, volume=80;
 /* ============ 效果器预设 ============ */
-/* 每声部延时：sync＝以「四分音符＝60/bpm 秒」为基准的倍率（随 BPM 自动同步）；ms＝固定毫秒；fb＝回声次数；wet＝效果量 */
+/* 每声部延时：sync＝以「四分音符＝60/bpm 秒」为基准的倍率（随 BPM 自动同步）；ms＝固定毫秒；
+   fb＝回声次数；wet＝效果量；damp＝回声高频阻尼（越小越暗，模拟远距离/旧设备）；
+   wobble＝磁带抖动深度（秒，LFO 调制延迟时间，模拟磁带/模拟电路的音高颤动）；wobRate＝抖动速度 Hz */
 const DELAY_PRESETS=[
   {id:'off',    name:'延时 Delay · 关'},
-  {id:'slap',   name:'拍打回声 Slapback',   ms:.09,  fb:.18, wet:.22, damp:4200},
-  {id:'8th',    name:'1/8 短延 8th',        sync:.5, fb:.28, wet:.26, damp:3600},
-  {id:'dot8',   name:'附点 1/8 Dotted 8th', sync:.75,fb:.38, wet:.28, damp:3200},
-  {id:'quarter',name:'1/4 回声 1/4 Note',   sync:1,  fb:.44, wet:.28, damp:2800},
-  {id:'space',  name:'空间漂移 Ambient Echo',sync:1.5,fb:.52, wet:.32, damp:2200},
+  {id:'slap',   name:'拍打回声 Slapback',  ms:.09,  fb:.18, wet:.22, damp:4200},
+  {id:'8th',    name:'1/8 短延 8th',       sync:.5, fb:.28, wet:.26, damp:3600},
+  {id:'dot8',   name:'附点 1/8 Dotted 8th',sync:.75,fb:.38, wet:.28, damp:3200},
+  {id:'quarter',name:'1/4 回声 1/4 Note',  sync:1,  fb:.44, wet:.28, damp:2800},
+  {id:'tape',   name:'磁带回声 Tape Echo', sync:1,  fb:.5,  wet:.3,  damp:2600, wobble:.0011, wobRate:.8},
+  {id:'dub',    name:'Dub 回声 Dub',       sync:1.5,fb:.58, wet:.34, damp:2200, wobble:.0006, wobRate:.5},
+  {id:'analog', name:'模拟回声 Analog',    sync:.75,fb:.42, wet:.28, damp:2000, wobble:.0005, wobRate:1.3},
 ];
 const DELAY_IDS=new Set(DELAY_PRESETS.map(p=>p.id));
-/* 总输出混响（卷积）：decay＝衰减秒数；wet＝基准湿度（实际湿度 × revMix 强度） */
+/* 总输出混响（卷积）：decay＝衰减秒数；wet＝基准湿度（实际湿度 × revMix 强度）；
+   pre＝预延迟秒（直达声与混响间的间隔，决定「房间大小」听感）；damp＝尾音高频阻尼（越小越暗）；
+   attack＝起音爬升秒（板式混响的标志是瞬间起音）；curve＝衰减曲线指数（越大越快收——门限混响用 12）；
+   er＝早期反射 [[毫秒,增益]...]，给小空间明确的墙面反弹感 */
 const REV_PRESETS=[
   {id:'off',      name:'混响 Reverb · 关'},
-  {id:'room',     name:'房间 Room',       decay:.9, wet:.16},
-  {id:'plate',    name:'板式 Plate',      decay:1.9,wet:.24},
-  {id:'hall',     name:'音乐厅 Hall',     decay:3.2,wet:.30},
-  {id:'cathedral',name:'教堂 Cathedral',  decay:4.6,wet:.34},
-  {id:'ambient',  name:'氛围空间 Ambient',decay:6.5,wet:.38},
+  {id:'room',     name:'房间 Room',       decay:.8, wet:.15, pre:.012,damp:7200, curve:2.5,attack:.008, er:[[7,.5],[13,.34],[21,.22]]},
+  {id:'chamber',  name:'混响室 Chamber',  decay:1.4,wet:.19, pre:.02, damp:8200, curve:2.4,attack:.006, er:[[11,.46],[19,.3],[31,.2],[47,.12]]},
+  {id:'plate',    name:'板式 Plate',      decay:2.2,wet:.24, pre:0,   damp:9500, curve:2.2,attack:.0015,er:[[9,.4],[15,.26]]},
+  {id:'hall',     name:'音乐厅 Hall',     decay:2.9,wet:.28, pre:.03, damp:5600, curve:2.6,attack:.01,  er:[[19,.42],[33,.28],[53,.17],[71,.1]]},
+  {id:'cathedral',name:'教堂 Cathedral',  decay:4.2,wet:.32, pre:.05, damp:4200, curve:2.4,attack:.012},
+  {id:'ambient',  name:'氛围空间 Ambient',decay:6.2,wet:.36, pre:.07, damp:3200, curve:2.2},
+  {id:'spring',   name:'弹簧混响 Spring', decay:.5, wet:.2,  pre:.002,damp:11000,curve:4.5,attack:.0008,er:[[3,.6],[6,.4],[9,.3],[14,.2]]},
+  {id:'gate',     name:'门限混响 Gate',   decay:.75,wet:.3,  pre:.004,damp:9000, curve:12, attack:.002},
 ];
 const REV_IDS=new Set(REV_PRESETS.map(p=>p.id));
-let revPreset='off', revMix=1, revConv=null, revWet=null, revDecay=-1;
+let revPreset='off', revMix=1, revConv=null, revPre=null, revWet=null, revBuilt=null;
 
 function ensureAudio(){
   if(audioCtx) return;
@@ -39,28 +49,43 @@ function ensureAudio(){
   const cmp=audioCtx.createDynamicsCompressor();
   cmp.threshold.value=-13; cmp.knee.value=16; cmp.ratio.value=3.2; cmp.attack.value=.004; cmp.release.value=.18;
   masterGain.connect(lp); lp.connect(cmp); cmp.connect(audioCtx.destination);
-  /* 总输出混响发送：masterGain → 卷积 → 湿度 → 压缩器 */
+  /* 总输出混响发送：masterGain → 预延迟 → 卷积 → 湿度 → 压缩器
+     预延迟（pre）让直达声与混响错开几十毫秒——「大房间」听感的关键参数 */
+  revPre=audioCtx.createDelay(1); revPre.delayTime.value=0;
   revConv=audioCtx.createConvolver();
   revWet=audioCtx.createGain(); revWet.gain.value=0;
-  masterGain.connect(revConv); revConv.connect(revWet); revWet.connect(cmp);
+  masterGain.connect(revPre); revPre.connect(revConv); revConv.connect(revWet); revWet.connect(cmp);
   applyVolume(); applyReverb();
 }
 function applyVolume(){ if(masterGain) masterGain.gain.value=Math.pow(volume/100,1.55)*.95; }
-/* 程序生成脉冲响应：双声道去相关噪声 × 指数衰减（decay 变了才重建） */
-function makeIR(decay){
-  const sr=audioCtx.sampleRate, len=Math.max(1,(sr*decay)|0);
+/* 程序生成脉冲响应（按预设参数化）：
+   双声道去相关噪声 × 衰减曲线（curve）× 起音爬升（attack）× 一阶低通高频阻尼（damp），
+   开头叠加离散早期反射（er）——早期反射 + 阻尼 + 预延迟是「真实空间感」的三大件 */
+function makeIR(p){
+  const sr=audioCtx.sampleRate, len=Math.max(1,(sr*(p.decay||1))|0);
   const buf=audioCtx.createBuffer(2,len,sr);
+  const damp=p.damp||0, k=damp?Math.exp(-2*Math.PI*damp/sr):1, a=1-k;
+  const curve=p.curve||2.8, atkN=p.attack?Math.max(1,(sr*p.attack)|0):0;
+  const er=(p.er||[]).map(([ms,g])=>[((sr*ms)/1000)|0,g]);
   for(let ch=0;ch<2;ch++){
-    const d=buf.getChannelData(ch);
-    for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2.8);
+    const d=buf.getChannelData(ch); let lp=0;
+    for(const [i0,g0] of er) if(i0<len) d[i0]+=g0*(.7+Math.random()*.6)*(ch?-1:1);
+    for(let i=0;i<len;i++){
+      let n=Math.random()*2-1;
+      if(damp){ lp+=(n-lp)*a; n=lp; }
+      const env=Math.pow(1-i/len,curve)*(atkN?Math.min(1,i/atkN):1);
+      d[i]+=n*env;
+    }
   }
   return buf;
 }
 function applyReverb(){
   const p=REV_PRESETS.find(x=>x.id===revPreset)||REV_PRESETS[0];
   if(!audioCtx||!revConv) return;
-  if(p.decay!==revDecay){ revConv.buffer=makeIR(p.decay); revDecay=p.decay; }
-  revWet.gain.setTargetAtTime(Math.min(1,p.wet*(revMix==null?1:revMix)),audioCtx.currentTime,.05);
+  if(p.id!==revBuilt){ revConv.buffer=p.decay?makeIR(p):null; revBuilt=p.id; }
+  const t=audioCtx.currentTime;
+  revPre.delayTime.setTargetAtTime(p.pre||0,t,.05);
+  revWet.gain.setTargetAtTime(Math.min(1,p.wet*(revMix==null?1:revMix)),t,.05);
 }
 function setReverb(id){ revPreset=REV_IDS.has(id)?id:'off'; applyReverb(); }
 
@@ -92,6 +117,10 @@ function applyTrackFx(tr,b){
   b.fx.fb.gain.setTargetAtTime(p.fb||0,audioCtx.currentTime,.03);
   b.fx.send.gain.setTargetAtTime((p.wet||0)*(tr.fxMix==null?1:tr.fxMix),audioCtx.currentTime,.03);
   if(p.damp) b.fx.damp.frequency.setTargetAtTime(p.damp,audioCtx.currentTime,.03);
+  if(b.fx.wobD){                                    // 磁带抖动深度 / 速度（数字预设深度 0）
+    b.fx.wobD.gain.setTargetAtTime(p.wobble||0,audioCtx.currentTime,.05);
+    b.fx.wob.frequency.setTargetAtTime(p.wobRate||.8,audioCtx.currentTime,.05);
+  }
 }
 function setTrackFx(tr,id){
   tr.fx=DELAY_IDS.has(id)?id:'off';
@@ -114,10 +143,15 @@ function busFor(tr){
     const damp=audioCtx.createBiquadFilter(); damp.type='lowpass'; damp.frequency.value=3400;
     const fb=audioCtx.createGain(); fb.gain.value=0;
     const wet=audioCtx.createGain(); wet.gain.value=1;
+    /* 磁带/模拟电路的音高颤动：LFO 持续微调延迟时间（AudioParam 支持叠加）。
+       深度由预设 wobble 给出（数字类预设为 0 → 听感与纯数字回声一致） */
+    const wob=audioCtx.createOscillator(); wob.type='sine'; wob.frequency.value=.8;
+    const wobD=audioCtx.createGain(); wobD.gain.value=0;
+    wob.connect(wobD); wobD.connect(dl.delayTime); wob.start();
     g.connect(send); send.connect(dl); dl.connect(damp);
     damp.connect(fb); fb.connect(dl);                 // 反馈循环（带阻尼）
     damp.connect(wet); wet.connect(p||masterGain);
-    b={latch,gain:g,pan:p,fx:{send,dl,fb,damp}};
+    b={latch,gain:g,pan:p,fx:{send,dl,fb,damp,wob,wobD}};
     busCache.set(tr.id,b);
   }
   b.gain.gain.value=tr.vol;

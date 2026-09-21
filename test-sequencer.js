@@ -461,17 +461,26 @@ chk('延时预设：含「关」且 id 唯一、带名称',dIds.has('off')&&T.DE
   &&T.DELAY_PRESETS.every(p=>typeof p.name==='string'&&p.name.length>=1));
 chk('延时预设：每个非关预设都有效果量与反馈参数',T.DELAY_PRESETS.filter(p=>p.id!=='off')
   .every(p=>p.wet>0&&p.fb>0&&(p.sync!=null||p.ms!=null)));
+chk('延时预设：专业款齐备（磁带 / Dub / 模拟），抖动深度在合理区间',
+  dIds.has('tape')&&dIds.has('dub')&&dIds.has('analog')
+  &&T.DELAY_PRESETS.filter(p=>p.wobble!=null).every(p=>p.wobble>0&&p.wobble<=.003&&p.wobRate>0));
+chk('延时预设：已删减普通长尾款 space（被 Dub 回声取代）',!dIds.has('space'));
 chk('混响预设：含「关」且 id 唯一、每个非关预设都有衰减与湿度',rIds.has('off')&&T.REV_PRESETS.length===rIds.size
   &&T.REV_PRESETS.filter(p=>p.id!=='off').every(p=>p.decay>0&&p.wet>0));
+chk('混响预设：专业款齐备（混响室 / 弹簧 / 门限），带预延迟与阻尼参数',
+  rIds.has('chamber')&&rIds.has('spring')&&rIds.has('gate')
+  &&T.REV_PRESETS.filter(p=>p.id!=='off').every(p=>p.pre!=null&&p.damp!=null&&p.curve>0));
 chk('混响预设：含大空间预设 music厅 + 氛围空间，且氛围最大',rIds.has('hall')&&rIds.has('ambient')
   &&T.REV_PRESETS.find(p=>p.id==='ambient').decay>=6);
 const tfx=T.makeTrack('inst','效果测试','piano',0);
 chk('新声部默认延时为「关」且强度 100%',tfx.fx==='off'&&(tfx.fxMix==null||tfx.fxMix===1));
 T.setTrackFx(tfx,'dot8');
-chk('setTrackFx 生效（非法 id 回落「关」）',tfx.fx==='dot8');
+chk('setTrackFx 生效（dot8 合法）',tfx.fx==='dot8');
 T.setTrackFx(tfx,'不存在');
 chk('setTrackFx 生效（非法 id 回落「关」）',tfx.fx==='off');
 T.setTrackFx(tfx,'space');
+chk('已删减的旧预设 id（space）回落「关」——旧存档安全',tfx.fx==='off');
+T.setTrackFx(tfx,'dub');
 tfx.fxMix=.4;
 T.state.tracks.push(tfx);
 T.setReverb('ambient');
@@ -479,10 +488,10 @@ T.setRevMix(.6);
 T.save();
 const sv11=JSON.parse(store['polyseq.v7']);
 chk('存档含 reverb / revMix 与声部 fx / fxMix',sv11.reverb==='ambient'&&sv11.revMix===.6
-  &&sv11.tracks.some(t=>t.fx==='space'&&t.fxMix===.4));
+  &&sv11.tracks.some(t=>t.fx==='dub'&&t.fxMix===.4));
 T.loadSaved();
 chk('读回：reverb / revMix / fx / fxMix 还原',T.revGetter()==='ambient'&&T.getRevMix()===.6
-  &&T.state.tracks.find(t=>t.fx==='space'&&t.fxMix===.4)!==undefined);
+  &&T.state.tracks.find(t=>t.fx==='dub'&&t.fxMix===.4)!==undefined);
 T.setReverb('off'); T.setTrackFx(tfx,'off'); T.setRevMix(1);
 
 console.log('== 12. 每步力度 Velocity：默认 / 持久化 / 平铺 / MIDI 导出 ==');
@@ -550,12 +559,12 @@ T.setChordFx('dot8');
 chk('setChordFx 生效',T.chordFxGetter()==='dot8');
 T.setChordFx('不存在的预设');
 chk('非法 id 回落「关」',T.chordFxGetter()==='off');
-T.setChordFx('space'); T.setChordFxMix(.45);
+T.setChordFx('dub'); T.setChordFxMix(.45);
 T.save();
 const sv14=JSON.parse(store['polyseq.v7']);
-chk('存档含 chordFx / chordFxMix',sv14.chordFx==='space'&&sv14.chordFxMix===.45);
+chk('存档含 chordFx / chordFxMix',sv14.chordFx==='dub'&&sv14.chordFxMix===.45);
 T.loadSaved();
-chk('读回：chordFx / chordFxMix 还原',T.chordFxGetter()==='space'&&T.getChordFxMix()===.45);
+chk('读回：chordFx / chordFxMix 还原',T.chordFxGetter()==='dub'&&T.getChordFxMix()===.45);
 T.setChordFx('off'); T.setChordFxMix(1);
 T.save();
 chk('旧档（无 chordFx 字段）读取安全',(()=>{
@@ -565,7 +574,7 @@ chk('旧档（无 chordFx 字段）读取安全',(()=>{
   return ok&&T.chordFxGetter()==='off'&&T.getChordFxMix()===1;
 })());
 chk('和弦轨与声部延时互不干扰（声部 fx 不被覆盖）',
-  T.state.tracks.every(t=>t.fx!=='space'||true)&&T.chordFxGetter()==='off');
+  T.state.tracks.every(t=>t.fx!=='dub'||true)&&T.chordFxGetter()==='off');
 
 console.log('== 15. 常用和弦进行预设：铺满 / 截断 / 合并 / 指纹 / 应用 ==');
 T.setStyle(1);
@@ -849,7 +858,7 @@ chk('鼓声部通道条里没有延时下拉',drumStrip.querySelectorAll('.mx-fx
 chk('鼓声部通道条里没有声像控件（只剩「—」占位）',!!drumStrip.querySelector('.mx-pan-off'));
 chk('鼓声部仍被钉死在「无延时」',mx3.fx==='off','fx='+mx3.fx);
 /* 就算从代码里硬设鼓的延时，也会被 setTrackDelay 拉回「关」 */
-T.setTrackDelay(mx3,'space');
+T.setTrackDelay(mx3,'dub');
 chk('setTrackDelay 对鼓声部无效（强制回落 off）',mx3.fx==='off','fx='+mx3.fx);
 /* 鼓的音量能调（有推子、且写进 tr.vol） */
 const drumFader=T.mixerCard().querySelectorAll('.mx-fader input')[2];
@@ -879,8 +888,8 @@ const melStrip2=T.mixerCard().querySelectorAll('.mx-strip')[0];
 const fxSel=melStrip2.querySelector('.mx-fxsel');
 chk('旋律声部通道条有延时下拉，且回显当前值（dot8）',!!fxSel&&fxSel.value==='dot8',
     'val='+(fxSel&&fxSel.value));
-fxSel.value='space'; fxSel.fire('change');
-chk('在调音台换延时 → 声部 fx 跟着变',mx1.fx==='space','fx='+mx1.fx);
+fxSel.value='dub'; fxSel.fire('change');
+chk('在调音台换延时 → 声部 fx 跟着变',mx1.fx==='dub','fx='+mx1.fx);
 const fxMixR=melStrip2.querySelector('.mx-fxrow input[type=range]');
 chk('延时强度 Mix 推子回显当前值（50）',!!fxMixR&&fxMixR.value==='50','v='+(fxMixR&&fxMixR.value));
 fxMixR.value=20; fxMixR.fire('input');
