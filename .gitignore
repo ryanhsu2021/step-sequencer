@@ -8,3 +8,7 @@ _*.py
 deploy-result.json
 .DS_Store
 Thumbs.db
+.commitmsg.txt
+.probe.js
+.p2.js
+.mixer.png

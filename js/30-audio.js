@@ -66,6 +66,24 @@ function setReverb(id){ revPreset=REV_IDS.has(id)?id:'off'; applyReverb(); }
 
 /* 每声部输出链：gain → panner → master；并行延时发送（send → delay → 阻尼 → 反馈循环 → 湿度 → panner） */
 const busCache=new Map();
+/* 声部总线的「哑音」开关：安放在 gain 之前。
+   为什么必须有它：静音之后总线上仍可能有残留（延时的反馈循环、长音尾巴），
+   只把 gain 设成 0 挡不住已经进了延时线的信号；从源头切断才是干净的静音，
+   这也让 M / S 在播放中途点下就立刻见效。 */
+function muteLatch(tr){
+  const b=busCache.get(tr.id);
+  if(b&&b.latch&&audioCtx) b.latch.gain.value=(tr.mute||(soloActive()&&!tr.solo))?0:1;
+  return b;
+}
+/* 改音量 / 声像后让总线立刻跟上（等着下一次发声才更新的体感太迟钝） */
+function busSync(tr){
+  const b=busCache.get(tr.id);
+  if(!b||!audioCtx) return;
+  b.gain.gain.value=tr.vol;
+  if(b.pan) b.pan.pan.value=tr.pan;
+  applyTrackFx(tr,b);
+  muteLatch(tr);
+}
 function applyTrackFx(tr,b){
   const p=DELAY_PRESETS.find(x=>x.id===(tr.fx||'off'))||DELAY_PRESETS[0];
   if(!b.fx) return;
@@ -84,7 +102,10 @@ function busFor(tr){
   if(!audioCtx) return null;
   let b=busCache.get(tr.id);
   if(!b){
+    /* latch（哑音闸，源头）→ g（音量推子）→ panner → master；延时发送从 g 之后取 */
+    const latch=audioCtx.createGain(); latch.gain.value=1;
     const g=audioCtx.createGain(); g.gain.value=tr.vol;
+    latch.connect(g);
     let p;
     if(audioCtx.createStereoPanner){ p=audioCtx.createStereoPanner(); p.pan.value=tr.pan; g.connect(p); p.connect(masterGain); }
     else{ g.connect(masterGain); }
@@ -96,13 +117,14 @@ function busFor(tr){
     g.connect(send); send.connect(dl); dl.connect(damp);
     damp.connect(fb); fb.connect(dl);                 // 反馈循环（带阻尼）
     damp.connect(wet); wet.connect(p||masterGain);
-    b={gain:g,pan:p,fx:{send,dl,fb,damp}};
+    b={latch,gain:g,pan:p,fx:{send,dl,fb,damp}};
     busCache.set(tr.id,b);
   }
   b.gain.gain.value=tr.vol;
   if(b.pan) b.pan.pan.value=tr.pan;
   applyTrackFx(tr,b);
-  return b.gain;
+  muteLatch(tr);
+  return b.latch;                                     // 音源接在闸门之前：静音＝从源头断掉
 }
 
 /* 通用工具：噪声击弦 / 加法合成 */

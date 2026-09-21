@@ -355,6 +355,63 @@ input[type=range]:hover::-webkit-slider-thumb{transform:scale(1.15)}
 .dcell.ph{outline:2.5px solid var(--tci);outline-offset:-1px}
 .dnote{font-size:11px;color:color-mix(in srgb,var(--tci) 55%,transparent);margin:-6px 0 12px 50px;line-height:1.5}
 
+/* ---------- 调音台 Mixer（页面最底部）：每个声部一条通道条，纵向排开 ---------- */
+.mxcard{
+  margin-top:20px;padding:16px 18px 14px;border-radius:var(--radius);
+  background:var(--card);color:var(--ink);box-shadow:0 12px 32px rgba(20,20,20,.09);
+}
+.mx-head{display:flex;align-items:center;gap:9px;margin-bottom:12px;flex-wrap:wrap}
+.mx-icon{font-size:15px;line-height:1}
+.mx-title{font-size:15px;font-weight:750;letter-spacing:-.2px}
+.mx-hsub{font-size:11.5px;color:var(--muted);min-width:0}
+.mx-warn{color:#e05548}
+.mx-live{
+  margin-left:auto;font-family:var(--mono);font-size:10.5px;padding:3px 10px;border-radius:999px;
+  color:var(--dim);background:var(--soft);
+}
+.mx-live.on{color:#fff;background:#f4602c}
+.mx-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:6px 18px}
+.mx-strip{
+  display:flex;align-items:center;gap:9px;min-width:0;
+  padding:6px 10px;border-radius:14px;transition:background .14s,opacity .16s;
+}
+.mx-strip:hover{background:color-mix(in srgb,var(--ink) 5%,transparent)}
+.mx-strip.mx-muted{opacity:.45}
+.mx-strip.chord{background:color-mix(in srgb,#141414 6%,transparent)}
+.mx-dot{width:9px;height:9px;flex:none;border-radius:50%;background:#888;box-shadow:inset 0 0 0 1px rgba(0,0,0,.18)}
+.mx-tag{
+  width:18px;flex:none;text-align:center;font-family:var(--mono);font-size:10px;font-weight:700;
+  color:var(--dim);
+}
+.mx-cap{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1 1 84px}
+.mx-name{font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mx-sub{font-size:10px;font-style:normal;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mx-fx{flex:0 1 auto;min-width:0;display:flex;align-items:center}
+.mx-fxwrap{display:flex;align-items:center;gap:6px;min-width:0}
+.mx-fxsel{
+  font:inherit;font-size:10.5px;font-weight:600;padding:3px 7px;max-width:134px;
+  border-radius:999px;background:rgba(255,255,255,.9);
+}
+.mx-fxwrap input[type=range]{width:46px}
+.mx-nofx{font-size:10px;color:var(--dim);white-space:nowrap;cursor:help}
+.mx-ctl{display:flex;gap:4px;flex:none}
+.mx-btn{
+  width:23px;height:23px;border-radius:50%;cursor:pointer;padding:0;font:inherit;font-size:10.5px;font-weight:750;
+  border:1.5px solid rgba(20,20,20,.18);background:transparent;color:var(--muted);transition:.13s;
+}
+.mx-btn:hover:not(:disabled){border-color:rgba(20,20,20,.45);color:var(--ink)}
+.mx-btn:disabled{opacity:.3;cursor:not-allowed}
+.mx-btn.mx-m.on{background:#e89b3c;border-color:#e89b3c;color:#fff}
+.mx-btn.mx-s.on{background:#3c9de8;border-color:#3c9de8;color:#fff}
+.mx-fader{display:flex;align-items:center;gap:5px;flex:1 1 84px;min-width:0}
+.mx-fader input[type=range]{flex:1;width:auto;min-width:56px}
+.mx-v{font-family:var(--mono);font-size:10px;color:var(--muted);min-width:26px;text-align:right}
+.mx-pan{display:flex;align-items:center;gap:4px;flex:0 1 88px;min-width:0}
+.mx-pan input[type=range]{flex:1;width:auto;min-width:42px}
+.mx-pan-off{font-size:10px;color:var(--dim);justify-content:center}
+.mx-hint{margin-top:10px;font-size:11px;line-height:1.75;color:var(--muted)}
+.mx-hint b{color:var(--ink)}
+
 /* ---------- 底部添加行 / 页脚 ---------- */
 .addrow{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}
 .addchip{
@@ -437,6 +494,14 @@ footer summary::marker{color:var(--muted)}
   .chip input[type=range]{width:64px}
   input[type=range]{height:24px}
   input[type=range]::-webkit-slider-thumb{width:18px;height:18px;margin-top:-7px}   /* 触屏拇指更大的滑块 */
+  /* 调音台：单列（每条通道条独占一行），推子留足长度 */
+  .mxcard{margin-top:16px;padding:13px 12px 11px;border-radius:20px}
+  .mx-grid{grid-template-columns:1fr;gap:3px}
+  .mx-strip{padding:8px 6px;gap:8px}
+  .mx-fxsel{max-width:116px}
+  .mx-fxwrap input[type=range]{width:40px}
+  .mx-fader{flex:1 1 70px}
+  .mx-pan{flex:0 1 76px}
 }
 /* 手机：顶栏 = 常驻一行「▶ 播放 · BPM · ⚙」，其余控件收进 ⚙ 展开面板（分组换行，不再横向挤压）；
    步进区 / 鼓网格本就支持横向滚动——保留触控尺寸，不再为塞进屏幕而缩小到难按 */
@@ -486,6 +551,14 @@ footer summary::marker{color:var(--muted)}
   .cseg{flex-basis:110px;min-width:110px;padding:9px 12px 10px}
   .cseg .cname{font-size:20px}
   footer{padding:14px 14px;border-radius:20px}
+  /* 手机上的通道条：名称 + 效果一行，M/S + 推子 + 声像一行（推子够长才好拖） */
+  .mx-strip{flex-wrap:wrap;row-gap:6px}
+  .mx-cap{flex:1 1 auto}
+  .mx-ctl{order:3;margin-left:auto}
+  .mx-fader{order:4;flex:1 1 100%;min-width:0}
+  .mx-pan{order:5;flex:0 1 104px}
+  .mx-fx{order:2}
+  .mx-fxsel{max-width:38vw}
 }
 @media (max-width:420px){
   .stepnum{height:18px}

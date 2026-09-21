@@ -49,7 +49,7 @@ function chipFx(tr){
   DELAY_PRESETS.forEach(p=>s.add(new Option(p.name,p.id)));
   s.value=tr.fx||'off';
   s.title='本声部延时效果：回声时间与 BPM 自动同步';
-  s.addEventListener('change',()=>{setTrackFx(tr,s.value);save();toast('「'+tr.name+'」延时 → '+s.options[s.selectedIndex].text);});
+  s.addEventListener('change',()=>{setTrackDelay(tr,s.value);toast('「'+tr.name+'」延时 → '+s.options[s.selectedIndex].text);});
   return s;
 }
 function chipRange(label,min,max,val,fmt,oninput){
@@ -88,6 +88,7 @@ function renderTracks(){
     openTrackId=keep.id;
   }else openTrackId=opened.length?opened[0].id:null;
   state.tracks.forEach((tr,i)=>stack.appendChild(buildCard(tr,i)));
+  renderMixer();                                 // 调音台跟声部列表同源，一起重画
   relayoutSteps();                               // 渲染完量一次行宽，决定 16 / 8 / 4 步一行
 }
 
@@ -176,9 +177,8 @@ function renderChord(){
       toast('🎲 已按「'+STYLE().name+'」重新随机 '+state.prog.length+' 个和弦（个数与拍数不变，'+nb+' 小节 / '+progBeats()+' 拍）');
     }
     else if(a==='cmute'){
-      chordMute=!chordMute; save();
+      setChordMute(!chordMute);
       toast(chordMute?'和弦进行轨已静音（不再随播放发声）':'和弦进行轨开始发声 · 音色 '+INST_NAME(chordInstOf()));
-      renderChord();
     }
     else{
       const mel=state.tracks.find(t=>t.kind==='inst'&&t.seq.some(v=>v>=0));
@@ -191,11 +191,11 @@ function renderChord(){
   const ctl=head.querySelector('.cc-ctl');
   if(ctl){
     ctl.appendChild(chipSeg('小节',[1,2,3,4,8],progBars(),n=>setProgBars(n)));
-    ctl.appendChild(chipRange('音量',0,100,Math.round(chordVol*100),v=>v,x=>{chordVol=x/100;applyChordFx();save();}));
+    ctl.appendChild(chipRange('音量',0,100,Math.round(chordVol*100),v=>v,x=>setChordVolume(x/100)));
   }
   /* 「延时 Mix」紧挨延时预设（下面和 cc-fx 一起包进 .cc-fxwrap），不再和音量挤在一起 */
   const mixChip=chipRange('Mix',0,100,Math.round((chordFxMix==null?1:chordFxMix)*100),v=>v,
-    x=>{chordFxMix=x/100;applyChordFx();save();});
+    x=>setChordFxMix(x/100));
   mixChip.title='和弦进行轨延时效果量（干声 / 回声的比例，0＝只听干声）';
   const ciSel=head.querySelector('select.cc-inst');
   if(ciSel){
@@ -362,6 +362,176 @@ function delSeg(i){
   toast('已删除一个和弦，拍数并入相邻段');
 }
 
+/* ============================================================
+   调音台（Mixer）：页面最底部，纵向各声部一条通道条
+   每条 = 声部名 + 色标 / 音色 / 效果 / 静音独奏 / 音量推子 / 声像
+   ============================================================ */
+/* 音色名太长会挤爆通道条：取中文别名，英文名截断到 8 字符 */
+function shortInst(id){
+  const nm=INST_NAME(id)||'';
+  const cn=nm.match(/[\u4e00-\u9fa5]{1,4}/);
+  return cn?cn[0]:(nm.length>8?nm.slice(0,8):nm);
+}
+/* 原生 range 在桩里没有 setter：包一层，方便测试直接驱动 */
+function setRangeVal(r,v){ r.value=v; if(r.dispatchEvent) r.dispatchEvent('input',{target:r}); }
+/* 一条通道条：横排「色点 · 名称 / 音色 / 效果 / M S / 推子 / 声像」 */
+function mixerStrip(o){
+  const row=document.createElement('div');
+  row.className='mx-strip'+(o.kind==='chord'?' chord':'');
+  if(o.mute) row.classList.add('mx-muted');
+  if(o.solo) row.classList.add('mx-solo');
+
+  const dot=document.createElement('span'); dot.className='mx-dot';
+  if(o.bg) dot.style.background=o.bg;
+  dot.title=o.title||o.name;
+
+  const tag=document.createElement('span'); tag.className='mx-tag'; tag.textContent=o.tag||'';
+  tag.title=o.name;
+
+  const cap=document.createElement('span'); cap.className='mx-cap';
+  const nm=document.createElement('b'); nm.className='mx-name'; nm.textContent=o.name;
+  const sub=document.createElement('i'); sub.className='mx-sub'; sub.textContent=o.sub||'';
+  sub.title=o.subFull||o.sub||'';
+  cap.append(nm,sub);
+
+  const fx=document.createElement('span'); fx.className='mx-fx';
+  fx.appendChild(o.fxEl);
+
+  const ctl=document.createElement('span'); ctl.className='mx-ctl';
+  const mk=cls=>{ const b=document.createElement('button'); b.type='button'; b.className='mx-btn '+cls; return b; };
+  const mb=mk('mx-m'+(o.mute?' on':''));   mb.textContent='M'; mb.title='静音（点亮＝已静音）';
+  const sb=mk('mx-s'+(o.solo?' on':''));   sb.textContent='S'; sb.title='独奏（点亮＝只听它）';
+  if(!o.canSolo){ sb.disabled=true; sb.title='和弦进行轨没有独奏——用「和弦声」开关控制它'; }
+  mb.addEventListener('click',()=>o.onMute(!o.mute));
+  sb.addEventListener('click',()=>{ if(o.canSolo) o.onSolo(!o.solo); });
+  ctl.append(mb,sb);
+
+  const fader=document.createElement('span'); fader.className='mx-fader';
+  const r=document.createElement('input'); r.type='range'; r.min=0; r.max=100;
+  r.value=Math.round((o.vol==null?.85:o.vol)*100);
+  r.title='「'+o.name+'」音量';
+  const v=document.createElement('span'); v.className='mx-v'; v.textContent=r.value;
+  r.addEventListener('input',()=>{ v.textContent=r.value; o.onVol(+r.value/100); });
+  fader.append(r,v);
+
+  const pan=document.createElement('span'); pan.className='mx-pan';
+  if(o.pan==null||o.panOff){
+    pan.classList.add('mx-pan-off'); pan.textContent='—';
+    pan.title=(o.kind==='drum'?'鼓声部':'和弦进行轨')+'不走声像（保持居中）';
+  }else{
+    const pr=document.createElement('input'); pr.type='range'; pr.min=-100; pr.max=100;
+    pr.value=Math.round(o.pan*100); pr.title='「'+o.name+'」声像：L 左 / R 右';
+    const pv=document.createElement('span'); pv.className='mx-v';
+    pv.textContent=(o.pan>0?'R':o.pan<0?'L':'C')+Math.abs(Math.round(o.pan*100));
+    pr.addEventListener('input',()=>{
+      const x=+pr.value;
+      pv.textContent=(x>0?'R':x<0?'L':'C')+Math.abs(x);
+      o.onPan(x/100);
+    });
+    pan.append(pr,pv);
+  }
+
+  row.append(dot,tag,cap,fx,ctl,fader,pan);
+  return row;
+}
+/* 渲染整台调音台：纵向各声部 + 和弦进行轨总线（横向换行，一行至少放得下 3 条） */
+function renderMixer(){
+  const box=$('mixerCard'); if(!box) return;
+  const soloSome=soloActive();
+  const on=isPlaying;
+  box.innerHTML='';
+  const head=document.createElement('div'); head.className='mx-head';
+  head.innerHTML=
+    '<span class="mx-icon">🎚</span><span class="mx-title">调音台 Mixer</span>'+
+    '<span class="mx-hsub">'+state.tracks.length+' 个声部 + 和弦轨 · 拖动推子即调音量，M 静音 / S 独奏'+
+      (soloSome?' · <b class="mx-warn">独奏中</b>':'')+'</span>';
+  const live=document.createElement('span'); live.className='mx-live'+(on?' on':'');
+  live.textContent=on?'● 播放中':'○ 已停止';
+  live.title='播放中改推子 / M / S 立刻听得到';
+  head.appendChild(live);
+  box.appendChild(head);
+
+  const grid=document.createElement('div'); grid.className='mx-grid';
+  state.tracks.forEach((tr,i)=>{
+    const drum=tr.kind==='drum';
+    grid.appendChild(mixerStrip({
+      kind:'track',tag:String(i+1),name:tr.name,bg:tr.color&&tr.color.bg,
+      title:'第 '+(i+1)+' 个声部「'+tr.name+'」',mute:!!tr.mute,solo:!!tr.solo,canSolo:true,
+      sub:drum?('鼓机 · '+INST_NAME(tr.inst)):shortInst(tr.inst),
+      subFull:drum?'鼓机合成音源':INST_NAME(tr.inst),
+      fxEl:(()=>{
+        if(drum){
+          const c=document.createElement('span');
+          c.className='mx-nofx'; c.textContent='— 无延时';
+          c.title='鼓声部不做延时：给鼓点加回声容易糊，音量用右侧推子调';
+          return c;
+        }
+        const s=document.createElement('select');
+        s.className='mx-fxsel';
+        DELAY_PRESETS.forEach(p=>s.add(new Option(p.name,p.id)));
+        s.value=tr.fx||'off';
+        s.title='「'+tr.name+'」延时效果（回声时间随 BPM 自动同步）';
+        s.addEventListener('change',()=>{
+          setTrackDelay(tr,s.value);
+          toast('「'+tr.name+'」延时 → '+s.options[s.selectedIndex].text);
+        });
+        const wrap=document.createElement('span'); wrap.className='mx-fxwrap';
+        const mix=document.createElement('input'); mix.type='range'; mix.min=0; mix.max=100;
+        mix.value=Math.round((tr.fxMix==null?1:tr.fxMix)*100);
+        mix.title='延时强度 Mix（干声 / 回声的比例）';
+        const mv=document.createElement('span'); mv.className='mx-v'; mv.textContent=mix.value;
+        mix.addEventListener('input',()=>{ mv.textContent=mix.value; setTrackFxMix(tr,+mix.value/100); });
+        wrap.append(s,mix,mv);
+        return wrap;
+      })(),
+      vol:tr.vol,
+      pan:drum?null:tr.pan,
+      onVol:v=>setTrackVol(tr,v),
+      onPan:v=>setTrackPan(tr,v),
+      onMute:v=>{ setTrackMute(tr,v); toast(v?('🔇 「'+tr.name+'」已静音'):('🔊 「'+tr.name+'」取消静音')); },
+      onSolo:v=>{ setTrackSolo(tr,v); toast(v?('🎧 独奏：「'+tr.name+'」（其它声部暂时不发声）'):'🎧 取消独奏'); },
+    }));
+  });
+  /* 和弦进行轨：它也有自己的总线（音量 / 静音 / 延时都能在这调） */
+  grid.appendChild(mixerStrip({
+    kind:'chord',tag:'♩',name:'和弦进行轨',bg:'#141414',
+    title:'和弦进行轨的总线',mute:!!chordMute,solo:false,canSolo:false,
+    sub:shortInst(chordInstOf()),subFull:'和弦音色：'+INST_NAME(chordInstOf()),
+    fxEl:(()=>{
+      const s=document.createElement('select');
+      s.className='mx-fxsel';
+      DELAY_PRESETS.forEach(p=>s.add(new Option(p.name,p.id)));
+      s.value=chordFx;
+      s.title='和弦进行轨的延时效果（回声时间随 BPM 自动同步）';
+      s.addEventListener('change',()=>{
+        setChordFx(s.value);
+        toast('和弦进行轨延时 → '+s.options[s.selectedIndex].text);
+      });
+      const wrap=document.createElement('span'); wrap.className='mx-fxwrap';
+      const mix=document.createElement('input'); mix.type='range'; mix.min=0; mix.max=100;
+      mix.value=Math.round((chordFxMix==null?1:chordFxMix)*100);
+      mix.title='和弦轨延时强度 Mix';
+      const mv=document.createElement('span'); mv.className='mx-v'; mv.textContent=mix.value;
+      mix.addEventListener('input',()=>{ mv.textContent=mix.value; setChordFxMix(+mix.value/100); });
+      wrap.append(s,mix,mv);
+      return wrap;
+    })(),
+    vol:chordVol,
+    pan:null,
+    onVol:v=>setChordVolume(v),
+    onPan:()=>{},
+    onMute:v=>{ setChordMute(v); toast(v?'🔇 和弦进行轨已静音（不再随播放发声）':'🔊 和弦进行轨开始发声 · 音色 '+INST_NAME(chordInstOf())); },
+    onSolo:()=>{},
+  }));
+  box.appendChild(grid);
+  const hint=document.createElement('div'); hint.className='mx-hint';
+  hint.innerHTML='每个声部一条通道条：<b>推子</b>＝音量（拖动即时生效）、<b>M</b> 静音、<b>S</b> 独奏，'+
+    '中间的<b>效果</b>下拉就是该声部的延时（鼓声部不做延时，所以显示「— 无延时」）；'+
+    '右侧 <b>L / C / R</b> 是声像（鼓与和弦轨保持居中）。'+
+    '这里和声部卡里的参数是<b>同一份状态</b>——在哪边改都会一起变，也会一起存档。';
+  box.appendChild(hint);
+}
+
 function buildCard(tr,i){
   const isOpen=tr.open!==false;
   const el=document.createElement('section');
@@ -411,8 +581,8 @@ function buildCard(tr,i){
     else if(a==='opt') optimizeForTrack(tr);
     else if(a==='rand') (tr.kind==='drum'?randomizeDrum:randomizeForTrack)(tr);
     else if(a==='up'||a==='down') moveTrack(tr.id,a==='up'?-1:1);
-    else if(a==='mute'){tr.mute=!tr.mute;renderTracks();}
-    else if(a==='solo'){tr.solo=!tr.solo;renderTracks();}
+    else if(a==='mute') setTrackMute(tr,!tr.mute);
+    else if(a==='solo') setTrackSolo(tr,!tr.solo);
     else if(a==='clear') clearTrack(tr);
     else if(a==='del') removeTrack(tr.id);
   }));
@@ -470,9 +640,9 @@ function buildCard(tr,i){
       });
       gPreset.appendChild(more);
     }
-    const gFx=tmGroup('效果');
-    gFx.appendChild(chipFx(tr));
-    gFx.appendChild(chipRange('强度',0,100,Math.round((tr.fxMix==null?1:tr.fxMix)*100),v=>v,x=>{tr.fxMix=x/100;save();}));
+    /* 鼓组：不要延时效果（鼓点加回声容易糊），改为音量控制（与调音台推子同一份状态） */
+    const gMix=tmGroup('混音');
+    gMix.appendChild(chipRange('音量',0,100,Math.round((tr.vol==null?.85:tr.vol)*100),v=>v,x=>setTrackVol(tr,x/100)));
   }else{
     /* 「跟随和弦进行」开关：开启时该声部音高实时随和弦轨吸附（改和弦即跟随），
        关闭时不动音高；回到和弦内音不再二次改动（幂等）。✨/🎼 恒用和弦轨做和声 */
@@ -497,10 +667,10 @@ function buildCard(tr,i){
     oct.addEventListener('change',()=>{tr.oct=+oct.value;refreshSub(tr);refreshAll();save();});
     gVoice.append(sel,oct);
     const gMix=tmGroup('混音');
-    gMix.appendChild(chipRange('音量',0,100,Math.round(tr.vol*100),v=>v,x=>{tr.vol=x/100;save();}));
+    gMix.appendChild(chipRange('音量',0,100,Math.round(tr.vol*100),v=>v,x=>setTrackVol(tr,x/100)));
     const gFx=tmGroup('效果');
     gFx.appendChild(chipFx(tr));
-    gFx.appendChild(chipRange('强度',0,100,Math.round((tr.fxMix==null?1:tr.fxMix)*100),v=>v,x=>{tr.fxMix=x/100;save();}));
+    gFx.appendChild(chipRange('强度',0,100,Math.round((tr.fxMix==null?1:tr.fxMix)*100),v=>v,x=>setTrackFxMix(tr,x/100)));
   }
   pane.appendChild(meta);
 
@@ -700,6 +870,22 @@ function makeDrumCell(tr,lane,s,b,k,gap){
     tr.drum='custom'; refreshSub(tr); save();
     if(val){ ensureAudio(); if(audioCtx.state!=='running') audioCtx.resume(); playDrumHit(tr,lane.id,audioCtx.currentTime+.02); }
   });
+  /* 在鼓格上滚动＝调这个鼓声部的音量（和调音台推子、卡片「混音」滑杆同一份状态）；
+     按住 Shift 滚动才是调这一击的力度——音量与力度分开，不会互相踩。
+     这里必须走完整重绘：卡片滑杆与调音台推子都靠重绘回显，不然它们会显示旧值。 */
+  cell.addEventListener('wheel',e=>{
+    e.preventDefault();
+    if(e.shiftKey){
+      const cur=velOf(tr,s), nv=Math.max(.2,Math.min(1,(cur==null?.82:cur)+(e.deltaY<0?.06:-.06)));
+      if(!Array.isArray(tr.vel)) tr.vel=new Array(stepsOf(tr)).fill(null);
+      tr.vel[s]=nv; refreshStepCell(tr,s); save();
+      toast('第 '+(s+1)+' 步力度 → '+Math.round(nv*100)+'%');
+      return;
+    }
+    const nv=clamp01((tr.vol==null?.85:tr.vol)+(e.deltaY<0?.04:-.04));
+    tr.vol=nv; busSync(tr); save(); renderTracks();
+    toast('「'+tr.name+'」音量 → '+Math.round(nv*100)+'%');
+  },{passive:false});
   return cell;
 }
 function refreshDrumCells(tr){

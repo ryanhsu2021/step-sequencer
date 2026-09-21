@@ -124,6 +124,43 @@ function planToChords(plan){
   for(const c of segs){ const q=out[out.length-1]; if(q&&q.root===c.root) q.beats+=c.beats; else out.push(c); }
   return out.map(c=>mkChord(c.root,c.beats,c.seventh));
 }
+/* 声部（及和弦轨）的混音字段统一写入口：音量 / 声像 / 静音 / 独奏 / 延时 / 强度。
+   写完后让总线立刻跟上（改音量不必等下一次发声），并持久化；面板由调用方决定是否重绘。 */
+const clamp01=v=>Math.max(0,Math.min(1,v));
+function setTrackVol(tr,v,quiet){
+  if(!tr) return;
+  tr.vol=clamp01(v); busSync(tr); save();
+  if(!quiet) renderMixer();
+}
+function setTrackPan(tr,v,quiet){
+  if(!tr||tr.kind!=='inst') return;
+  tr.pan=Math.max(-1,Math.min(1,v)); busSync(tr); save();
+  if(!quiet) renderMixer();
+}
+function setTrackMute(tr,on,quiet){
+  if(!tr) return;
+  tr.mute=!!on; muteLatch(tr); save();
+  if(!quiet){ renderTracks(); renderMixer(); }
+}
+function setTrackSolo(tr,on,quiet){
+  if(!tr) return;
+  tr.solo=!!on; save();
+  if(!quiet){ renderTracks(); renderMixer(); }
+}
+/* 鼓声部不提供延时（鼓点加回声容易糊）：把 fx 钉死在「关」，总线一并归零 */
+function setTrackDelay(tr,id,quiet){
+  if(!tr) return;
+  if(tr.kind==='drum'){ tr.fx='off'; setTrackFx(tr,'off'); }
+  else setTrackFx(tr,id);
+  save();
+  if(!quiet) renderMixer();
+}
+function setTrackFxMix(tr,v,quiet){
+  if(!tr) return;
+  tr.fxMix=clamp01(v); busSync(tr); save();
+  if(!quiet) renderMixer();
+}
+
 /* 应用一条预设进行（整条替换，标记为手动），并试听新进行的第一个和弦 */
 function setProgPlan(plan){
   const ch=planToChords(plan);
@@ -226,9 +263,26 @@ function applyChordFx(){
   const b=busCache.get(CHORD_BUS_ID);
   if(b&&audioCtx) applyTrackFx(chordBusSpec(),b);
 }
+/* 和弦轨总线：音量 / 静音也在这里统一落值（音量走总线 gain，静音顺手哑掉，播放调度里另有短路） */
+function applyChordBus(){
+  const b=busCache.get(CHORD_BUS_ID);
+  if(!b||!audioCtx) return;
+  b.gain.gain.value=chordMute?0:chordVol;
+  if(b.pan) b.pan.pan.value=0;
+  applyTrackFx(chordBusSpec(),b);
+}
 function setChordFx(id){
   chordFx=DELAY_IDS.has(id)?id:'off';
   applyChordFx();
+}
+/* 和弦轨的混音（调音台里那一行）：静音 / 音量 都作用在它自己的总线上，与声部互不干扰 */
+function setChordMute(on,quiet){
+  chordMute=!!on; save();
+  if(!quiet){ renderChord(); renderMixer(); }
+}
+function setChordVolume(v,quiet){
+  chordVol=clamp01(v); applyChordBus(); save();
+  if(!quiet) renderMixer();
 }
 function playChordSeg(ch,time){
   try{

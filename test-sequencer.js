@@ -1,4 +1,4 @@
-/* 无头测试：✨ 连点变化（userSeq 锚点来源 + 弱拍衰减 + 质量带加权抽取）+ 🎲 随机生成 + 回归 */
+﻿/* 无头测试：✨ 连点变化（userSeq 锚点来源 + 弱拍衰减 + 质量带加权抽取）+ 🎲 随机生成 + 回归 */
 const fs=require('fs'), vm=require('vm'), path=require('path');
 /* 工程已拆分为多模块：按主页 <script> 的加载顺序拼接 */
 const ORDER=['01-core','02-modes','03-styles','04-drums','10-state','20-ui','21-interact',
@@ -10,8 +10,9 @@ if(!js) { console.log('NO_JS'); process.exit(1); }
 class El{
   constructor(tag){
     this.tagName=(tag||'div').toUpperCase(); this.children=[]; this.style={setProperty(){}}; this.dataset={}; this.attrs={};
-    this._cls=new Set(); this.textContent=''; this._inner=''; this.value=''; this.options=[];
+    this._cls=new Set(); this.textContent=''; this._inner=''; this._value=''; this.options=[];
     this.disabled=false; this.label=''; this.min=''; this.max=''; this.title=''; this.type='';
+    this.selectedIndex=0;
     const self=this;
     this.classList={
       add:(...c)=>c.forEach(x=>x&&self._cls.add(x)),
@@ -25,6 +26,37 @@ class El{
   set className(v){ this._cls=new Set(String(v).split(/\s+/).filter(Boolean)); }
   set innerHTML(v){ this._inner=v; this.children=parseHTML(v); this.options=[]; }
   get innerHTML(){ return this._inner; }
+  /* input.value：真浏览器读回的是字符串，范围控件还会夹到 [min,max]——桩里照做，
+     这样「拖动推子」才能被真实模拟（并暴露把 value 当数字用的 bug） */
+  get value(){
+    const v=this._value;
+    if(this.tagName==='INPUT'&&this.type==='range'){
+      const n=parseFloat(v);
+      if(isNaN(n)) return '50';
+      const lo=parseFloat(this.min||'0')||0, hi=this.max===''?100:(parseFloat(this.max)||0);
+      return String(Math.max(lo,Math.min(hi,n)));
+    }
+    return v;
+  }
+  /* 选择框语义（真浏览器行为）：options 里被选中的那一项的 value 就是 this.value；
+     赋值 value 会同步移动 selectedIndex——代码里的 s.options[s.selectedIndex] 才能拿到正确文本 */
+  get value(){
+    if(this.tagName==='SELECT'&&this.options&&this.options.length){
+      const o=this.options[this.selectedIndex|0];
+      return o?(o.value==null?'':String(o.value)):'';
+    }
+    return this._value;
+  }
+  set value(v){
+    const s=String(v);
+    if(this.tagName==='SELECT'&&this.options&&this.options.length){
+      const i=this.options.findIndex(o=>String(o.value)===s);
+      this.selectedIndex=i>=0?i:0;
+      this._value=(i>=0?this.options[i].value:'');
+      return;
+    }
+    this._value=s;
+  }
   appendChild(c){ this.children.push(c); return c; }
   insertBefore(c,ref){ const i=ref?this.children.indexOf(ref):-1; if(i<0) this.children.push(c); else this.children.splice(i,0,c); return c; }
   removeChild(c){ const i=this.children.indexOf(c); if(i>=0) this.children.splice(i,1); return c; }
@@ -33,21 +65,50 @@ class El{
   removeEventListener(){}
   setAttribute(k,v){ this.attrs[k]=v; if(k==='value') this.value=v; }
   getAttribute(k){ return this.attrs[k]; }
-  add(opt){ this.options.push(opt); this.children.push(opt); }
+  add(opt){
+    this.options.push(opt); this.children.push(opt);
+    const self=this;
+    if(typeof opt==='object'&&opt) Object.defineProperty(opt,'selected',{
+      configurable:true,get(){ return self.options[self.selectedIndex]===opt; }});
+    if(this.selectedIndex==null) this.selectedIndex=0;
+  }
   click(){}
+  /* 触发事件：让「点击 M / 改下拉 / 拖推子」这类交互在测试里真的跑一遍（顺带抓运行时错误） */
+  fire(type,ev){
+    const hs=this._handlers&&this._handlers[type]; if(!hs) return;
+    const e=Object.assign({type,target:this,currentTarget:this,stopPropagation(){},preventDefault(){}},ev||{});
+    for(const h of hs) h(e);
+  }
   blur(){} focus(){}
   setPointerCapture(){} releasePointerCapture(){}
   getBoundingClientRect(){ return {top:0,left:0,width:100,height:40}; }
   querySelector(sel){ return this.querySelectorAll(sel)[0]||null; }
+  /* 支持后代选择器（".mx-fader input" / ".mx-strip .mx-m"）——调音台断言要靠它逐条通道取控件 */
   querySelectorAll(sel){
-    const out=[];
-    const walk=n=>{ for(const c of (n.children||[])){ if(selMatch(c,sel)) out.push(c); walk(c); } };
-    walk(this); return out;
+    const parts=String(sel).trim().split(/\s+/).filter(Boolean);
+    if(parts.length<=1){
+      const out=[];
+      const walk=n=>{ for(const c of (n.children||[])){ if(selMatch(c,sel)) out.push(c); walk(c); } };
+      walk(this); return out;
+    }
+    const findUnder=(root,part)=>{
+      const out=[];
+      const walk=n=>{ for(const c of (n.children||[])){ if(selMatch(c,part)) out.push(c); walk(c); } };
+      walk(root); return out;
+    };
+    let cur=[this];
+    for(const part of parts){
+      const next=[];
+      for(const node of cur) for(const hit of findUnder(node,part)) if(next.indexOf(hit)<0) next.push(hit);
+      cur=next;
+    }
+    return cur;
   }
 }
+/* 极简选择器引擎：支持 tag / .class / [attr] 组合（如 button.mx-m[data-act]），不支持后代（由外层拆词处理） */
 function selMatch(el,sel){
   if(!el||!el._cls) return false;
-  const mm=sel.match(/^([\w-]+)?((?:\.[\w-]+)*)((?:\[[^\]]+\])*)$/); if(!mm) return false;
+  const mm=String(sel).match(/^([\w-]+)?((?:\.[\w-]+)*)((?:\[[^\]]+\])*)$/); if(!mm) return false;
   const [,tag,clss,attrs]=mm;
   if(tag&&el.tagName!==tag.toUpperCase()) return false;
   if(clss) for(const c of clss.split('.').filter(Boolean)) if(!el._cls.has(c)) return false;
@@ -73,7 +134,7 @@ function parseHTML(html){
       const k=am[1], v=am[2]!==undefined?am[2]:'';
       if(k==='class') el.className=v;
       else if(k.startsWith('data-')) el.dataset[k.slice(5)]=v;
-      else { el.attrs[k]=v; if(k==='type') el.type=v; if(k==='value') el.value=v; }
+      else { el.attrs[k]=v; if(k==='type') el.type=v; }
     }
     stack[stack.length-1].children.push(el);
     if(!selfc&&!/^(input|br|img|hr|meta|link)$/i.test(tag)) stack.push(el);
@@ -115,7 +176,11 @@ const expose=`
   planToChords,setProgPlan,progKeyOf,planRoman,modeIdx:()=>modeIdx,PLAN_LIB,PROG_PLANS,STYLE,ROMAN,
   rateOf,rateName,spanOf,setRate,loopSteps,RATE_VALUES,
   toggleOpen,toggleFollow,isFollowing,applyFollow,syncFollowers,openId:()=>openTrackId,followOf:t=>!!t.follow,
-  renderTracks,chordTones,followRow,playMidiOf};`;
+  renderTracks,chordTones,followRow,playMidiOf,
+  renderMixer,mixerCard:()=>$('mixerCard'),setTrackVol,setTrackPan,setTrackMute,setTrackSolo,setTrackDelay,setTrackFxMix,
+  setChordMute,setChordVolume,chordMuteGetter:()=>chordMute,chordVolGetter:()=>chordVol,
+  setChordFxMix:v=>{chordFxMix=v;},isPlayingGetter:()=>isPlaying,shortInst,
+  cardOf:id=>view.cards.get(id)};`;
 try{ vm.runInContext(js+expose,sandbox); }catch(e){ console.log('LOAD_FAIL:',e.stack); process.exit(1); }
 const T=sandbox.__T;
 let pass=0,fail=0;
@@ -721,6 +786,221 @@ if(dr){
   const fr0=dr.seq&&dr.seq.length?T.followRow(dr,0):-1;
   chk('鼓轨：followRow 原样返回（不折算）',!dr.seq||dr.seq.length===0||fr0===dr.seq[0],'fr0='+fr0);
 }
+
+console.log('\n== 18. 调音台 Mixer：通道条 / 推子 / M·S / 鼓无延时 / 与声部卡同步 ==');
+/* ---- 重建一组确定的声部：主旋律(有延时) + 贝斯 + 鼓组（各 1 小节） ---- */
+T.state.tracks.length=0;
+const mx1=T.makeTrack('inst','主旋律','piano',0);
+const mx2=T.makeTrack('inst','贝斯','bass',-1);
+const mx3=T.makeTrack('drum','鼓组','',0);
+mx1.bars=1; mx2.bars=1; mx3.bars=1;
+mx1.seq=new Array(16).fill(-1); mx1.seq[0]=0; mx1.seq[4]=4;
+mx1.userSeq=null; mx1.follow=false;
+mx1.fx='dot8'; mx1.fxMix=.5; mx1.pan=0;
+mx2.seq=new Array(16).fill(-1); mx2.seq[0]=6;
+T.state.tracks.push(mx1,mx2,mx3);
+T.renderTracks();
+const mcard=T.mixerCard();
+chk('调音台容器存在且已渲染',!!mcard&&mcard.querySelectorAll('.mx-head').length===1,
+    'cls='+(mcard&&mcard.className));
+const strips=mcard.querySelectorAll('.mx-strip');
+chk('通道条数 = 声部数 + 和弦轨（'+T.state.tracks.length+'+1='+strips.length+'）',
+    strips.length===T.state.tracks.length+1,'strips='+strips.length);
+const faders=mcard.querySelectorAll('.mx-fader input');
+chk('每条通道各有一根音量推子（'+faders.length+'）',faders.length===strips.length,'faders='+faders.length);
+chk('每条通道各有一对 M / S',mcard.querySelectorAll('.mx-m').length===strips.length
+  &&mcard.querySelectorAll('.mx-s').length===strips.length);
+chk('推子初始值＝各声部当前音量（85 / 85 / 85 / 和弦 80）',
+    faders[0].value==='85'&&faders[2].value==='85'&&faders[strips.length-1].value==='80',
+    faders.map(f=>f.value).join(','));
+/* ---- 推子：拖动即改音量，且自动夹在 0–100 ---- */
+faders[0].value=30; faders[0].fire('input');
+chk('拖推子 → 声部音量跟着变（0→30%）',mx1.vol===.3,'vol='+mx1.vol);
+faders[1].value=999; faders[1].fire('input');
+chk('推子拖过头自动夹在 100%',mx2.vol===1,'vol='+mx2.vol);
+faders[1].value=-5; faders[1].fire('input');
+chk('推子拖到负数自动夹在 0%',mx2.vol===0,'vol='+mx2.vol);
+/* ---- 声部卡上的音量滑杆与调音台是同一份状态（双向） ---- */
+T.setTrackVol(mx1,.42);
+const f0=T.mixerCard().querySelectorAll('.mx-fader input')[0];
+chk('从别处改音量 → 调音台推子同步更新',f0.value==='42','f0='+f0.value);
+T.renderMixer();
+const f0b=T.mixerCard().querySelectorAll('.mx-fader input')[0];
+f0b.value=77; f0b.fire('input');
+chk('调音台改音量 → 声部字段同步（双向同源）',mx1.vol===.77,'vol='+mx1.vol);
+/* ---- 鼓声部：不做延时，只有音量 ---- */
+const drumStrip=T.mixerCard().querySelectorAll('.mx-strip')[2];
+chk('鼓声部通道条标着「— 无延时」',!!drumStrip.querySelector('.mx-nofx'),
+    drumStrip.querySelector('.mx-nofx')?'ok':'missing');
+chk('鼓声部通道条里没有延时下拉',drumStrip.querySelectorAll('.mx-fxsel').length===0,
+    'sel='+drumStrip.querySelectorAll('.mx-fxsel').length);
+chk('鼓声部通道条里没有声像控件（只剩「—」占位）',!!drumStrip.querySelector('.mx-pan-off'));
+chk('鼓声部仍被钉死在「无延时」',mx3.fx==='off','fx='+mx3.fx);
+/* 就算从代码里硬设鼓的延时，也会被 setTrackDelay 拉回「关」 */
+T.setTrackDelay(mx3,'space');
+chk('setTrackDelay 对鼓声部无效（强制回落 off）',mx3.fx==='off','fx='+mx3.fx);
+/* 鼓的音量能调（有推子、且写进 tr.vol） */
+const drumFader=T.mixerCard().querySelectorAll('.mx-fader input')[2];
+drumFader.value=55; drumFader.fire('input');
+chk('鼓声部音量可调（推子 → tr.vol）',mx3.vol===.55,'vol='+mx3.vol);
+/* ---- 旋律声部：延时下拉 + Mix 强度 ---- */
+const melStrip=T.mixerCard().querySelectorAll('.mx-strip')[0];
+const fxSel=melStrip.querySelector('.mx-fxsel');
+chk('旋律声部通道条有延时下拉，且回显当前值（dot8）',!!fxSel&&fxSel.value==='dot8',
+    'val='+(fxSel&&fxSel.value));
+fxSel.value='space'; fxSel.fire('change');
+chk('在调音台换延时 → 声部 fx 跟着变',mx1.fx==='space','fx='+mx1.fx);
+const fxMixR=melStrip.querySelector('.mx-fxwrap input');
+chk('延时强度 Mix 推子回显当前值（50）',!!fxMixR&&fxMixR.value==='50','v='+(fxMixR&&fxMixR.value));
+fxMixR.value=20; fxMixR.fire('input');
+chk('在调音台改 Mix → 声部 fxMix 跟着变',mx1.fxMix===.2,'fxMix='+mx1.fxMix);
+/* ---- 声像：只有旋律声部有（鼓与和弦轨居中） ---- */
+const panR=melStrip.querySelector('.mx-pan input');
+chk('旋律声部有声像推子，初值居中（0）',!!panR&&panR.value==='0','v='+(panR&&panR.value));
+panR.value=-60; panR.fire('input');
+chk('拖声像 → 声部 pan 跟着变',mx1.pan===-.6,'pan='+mx1.pan);
+T.setTrackPan(mx3,.5);
+chk('鼓声部忽略声像设置（保持居中）',mx3.pan===0,'pan='+mx3.pan);
+/* ---- M / S：与声部卡同一份状态 ---- */
+const mBtn=T.mixerCard().querySelectorAll('.mx-strip')[0].querySelector('.mx-m');
+const sBtn=T.mixerCard().querySelectorAll('.mx-strip')[0].querySelector('.mx-s');
+chk('M / S 初始未点亮',!mBtn.classList.contains('on')&&!sBtn.classList.contains('on'));
+mBtn.fire('click');
+chk('点 M → 声部静音 + 按钮点亮',mx1.mute===true&&T.mixerCard().querySelectorAll('.mx-strip')[0].querySelector('.mx-m').classList.contains('on'));
+sBtn.fire('click');
+chk('点 S → 声部独奏',mx1.solo===true,'solo='+mx1.solo);
+chk('独奏中标题有「独奏中」警示',T.mixerCard().querySelectorAll('.mx-warn').length===1,
+    'warn='+T.mixerCard().querySelectorAll('.mx-warn').length);
+chk('独奏中该通道条有 mx-solo 标记',T.mixerCard().querySelectorAll('.mx-strip')[0].classList.contains('mx-solo'));
+T.setTrackSolo(mx1,false);
+T.renderTracks();
+chk('取消独奏后警示消失',T.mixerCard().querySelectorAll('.mx-warn').length===0);
+/* 声部卡上的 M / S 按钮与调音台同步（点卡片的 M，调音台也亮） */
+const cardM=T.cardOf(mx1.id).el.querySelector('button[data-act="mute"]');
+cardM.fire('click');
+chk('点声部卡的 M → 调音台通道条一起点亮',
+    mx1.mute===true&&T.mixerCard().querySelectorAll('.mx-strip')[0].querySelector('.mx-m').classList.contains('on'));
+T.setTrackMute(mx1,false);
+/* ---- 和弦进行轨那一行 ---- */
+const chStrip=T.mixerCard().querySelectorAll('.mx-strip')[strips.length-1];
+chk('和弦轨通道条存在且有延时下拉',!!chStrip&&!!chStrip.querySelector('.mx-fxsel'));
+chk('和弦轨没有独奏按钮（禁用）',chStrip.querySelector('.mx-s').disabled===true);
+const chFader=chStrip.querySelector('.mx-fader input');
+chFader.value=25; chFader.fire('input');
+chk('和弦轨音量可调',T.chordVolGetter()===.25,'v='+T.chordVolGetter());
+const chM=chStrip.querySelector('.mx-m');
+chM.fire('click');
+chk('和弦轨 M 生效（＝和弦声开关）',T.chordMuteGetter()===true);
+T.setChordMute(false);
+chk('和弦轨取消静音',T.chordMuteGetter()===false);
+const chFx=chStrip.querySelector('.mx-fxsel');
+chFx.value='dot8'; chFx.fire('change');
+chk('和弦轨延时可在调音台切换',T.chordFxGetter()==='dot8','fx='+T.chordFxGetter());
+T.setChordFx('off');
+/* ---- 播放状态指示 ---- */
+chk('停止时指示灯显示「已停止」',T.mixerCard().querySelector('.mx-live').classList.contains('on')===false);
+/* ---- 存档：音量 / 声像 / 静音 / 独奏 / 延时 全都在（调音台改的也要存住） ---- */
+T.setTrackVol(mx1,.31); T.setTrackPan(mx1,.4); T.setTrackDelay(mx1,'slap'); T.setTrackFxMix(mx1,.6);
+T.setTrackMute(mx2,true); T.setTrackSolo(mx3,true);
+T.setChordVolume(.36);
+T.save();
+const sv18=JSON.parse(store['polyseq.v7']);
+const sv1=sv18.tracks[0], sv2t=sv18.tracks[1];
+chk('存档含 vol / pan / fx / fxMix',sv1.vol===.31&&sv1.pan===.4&&sv1.fx==='slap'&&sv1.fxMix===.6,
+    'vol='+sv1.vol+' pan='+sv1.pan+' fx='+sv1.fx+' fxMix='+sv1.fxMix);
+chk('存档含 mute / solo（调音台点出来的也存住）',sv2t.mute===true&&sv18.tracks[2].solo===true);
+chk('存档含 chordVol',sv18.chordVol===.36,'cv='+sv18.chordVol);
+T.loadSaved();
+const r1=T.state.tracks[0], r2t=T.state.tracks[1], r3=T.state.tracks[2];
+chk('读回：音量 / 声像 / 延时 / Mix 还原',r1.vol===.31&&r1.pan===.4&&r1.fx==='slap'&&r1.fxMix===.6);
+chk('读回：静音 / 独奏还原',r2t.mute===true&&r3.solo===true);
+chk('读回：和弦轨音量还原',T.chordVolGetter()===.36,'cv='+T.chordVolGetter());
+/* 读回后调音台推子应反映存档值 */
+T.renderMixer();
+const rf=T.mixerCard().querySelectorAll('.mx-fader input');
+chk('读回后调音台推子同步（31 / 85 / 85…）',rf[0].value==='31','v='+rf[0].value);
+T.setTrackMute(r2t,false); T.setTrackSolo(r3,false);
+T.setTrackVol(r1,.85); T.setTrackPan(r1,0); T.setTrackFxMix(r1,1);
+T.setTrackDelay(r1,'off'); T.setChordVolume(.8);
+/* ---- 旧档（无 vol / pan / fx，只有 fade 那套）读取安全 ---- */
+chk('旧档（无调音台字段）读取安全',(()=>{
+  const o=JSON.parse(store['polyseq.v7']);
+  o.tracks.forEach(t=>{ delete t.vol; delete t.pan; delete t.fx; delete t.fxMix; delete t.mute; delete t.solo; });
+  delete o.chordVol;
+  store['polyseq.v7']=JSON.stringify(o);
+  const ok=T.loadSaved();
+  return ok&&T.state.tracks.every(t=>typeof t.vol==='number'&&t.vol>0&&t.pan===0&&t.fx==='off'&&t.mute===false)
+    &&T.chordVolGetter()===.8;
+})());
+/* ---- 撤销：调音台改的量也能回退（快照带混音字段） ---- */
+T.renderTracks();
+const uTr=T.state.tracks[0];
+const keepVol=uTr.vol;
+T.pushUndo();
+T.setTrackVol(uTr,.2);
+T.undo();
+const uTr2=T.state.tracks.find(t=>t.name===uTr.name);
+chk('撤销可回退音量（快照带 vol）',uTr2&&uTr2.vol===keepVol,'vol='+(uTr2&&uTr2.vol));
+/* ---- 无 DOM 容器时不崩（mixerCard 缺失的兜底） ---- */
+chk('死掉/缺失的调音台容器不抛错',(()=>{
+  const bak=byId.mixerCard;
+  byId.mixerCard=new El('section'); byId.mixerCard.className='';
+  let ok=true; try{ T.renderMixer(); }catch(e){ ok=false; }
+  byId.mixerCard=bak;
+  return ok;
+})());
+
+/* ---- 回归：卡片滑杆 / 鼓格滚轮 必须让调音台推子跟着回显 ----
+   曾经的 bug：卡片上的混音滑杆走的是「安静写入」（不重绘），于是调音台上的推子显示旧值；
+   鼓格滚轮同样只改状态不重绘。这里把「一处改、多面同步」钉死。 */
+T.renderTracks();
+const gTr=T.state.tracks[0];
+const cardRange=(()=>{                       // 取该声部卡上的「混音 · 音量」滑杆
+  const card=T.cardOf(gTr.id);
+  const groups=card.el.querySelectorAll('.tm-group');
+  for(const g of groups){
+    const lb=g.querySelector('.tm-lb');
+    if(lb&&lb.textContent==='混音') return g.querySelector('input[type=range]');
+  }
+  return null;
+})();
+chk('能找到声部卡上的「混音」音量滑杆',!!cardRange);
+if(cardRange){
+  cardRange.value=33; cardRange.fire('input');
+  const mf=T.mixerCard().querySelectorAll('.mx-strip')[0].querySelector('.mx-fader input');
+  chk('卡片滑杆改音量 → 调音台推子回显同一值（不再显示旧值）',mf.value==='33','mf='+mf.value);
+  chk('卡片滑杆改音量 → 声部字段同步',gTr.vol===.33,'vol='+gTr.vol);
+}
+/* 鼓格滚轮：应改音量，且卡片滑杆 + 调音台推子一起跟上；效果仍是「无延时」 */
+const dTr=T.state.tracks.find(t=>t.kind==='drum');
+if(dTr){
+  dTr.vol=.5;
+  T.renderTracks();
+  const dcard=T.cardOf(dTr.id);
+  const dcell=dcard.el.querySelector('.dcell');
+  chk('鼓格存在可挂滚轮',!!dcell);
+  if(dcell){
+    const v0=dTr.vol;
+    dcell.fire('wheel',{deltaY:-120,shiftKey:false,preventDefault(){}});
+    chk('鼓格滚轮上滚 → 音量 +4%',Math.abs(dTr.vol-(v0+.04))<1e-6,'vol='+dTr.vol);
+    const dcard2=T.cardOf(dTr.id);
+    const rng2=(()=>{ for(const g of dcard2.el.querySelectorAll('.tm-group')){ const lb=g.querySelector('.tm-lb'); if(lb&&lb.textContent==='混音') return g.querySelector('input[type=range]'); } return null; })();
+    const dIdx=T.state.tracks.indexOf(dTr);
+    const mf2=T.mixerCard().querySelectorAll('.mx-fader input')[dIdx];
+    chk('鼓格滚轮 → 卡片滑杆回显（50 → 54）',!!rng2&&rng2.value==='54','v='+(rng2&&rng2.value));
+    chk('鼓格滚轮 → 调音台推子回显（50 → 54）',!!mf2&&mf2.value==='54','v='+(mf2&&mf2.value));
+    dcell.fire('wheel',{deltaY:120,shiftKey:false,preventDefault(){}});
+    chk('鼓格滚轮下滚 → 音量回落',Math.abs(dTr.vol-.5)<1e-6,'vol='+dTr.vol);
+    chk('滚轮调音量后鼓仍是「无延时」（效果没被顺手加回来）',dTr.fx==='off');
+    /* Shift + 滚轮＝调该击力度，不动音量 */
+    const volKeep=dTr.vol;
+    dcell.fire('wheel',{deltaY:-120,shiftKey:true,preventDefault(){}});
+    chk('Shift + 滚轮调的是力度，音量不变',dTr.vol===volKeep,'vol='+dTr.vol);
+    chk('Shift + 滚轮确实写入了该步力度',Array.isArray(dTr.vel)&&Math.abs(dTr.vel[0]-.88)<1e-6,'vel='+(dTr.vel&&dTr.vel[0]));
+  }
+}
+T.setTrackVol(gTr,.85);
+T.renderTracks();
 
 console.log('\n=== '+(fail?fail+' 项失败':'全部通过')+'（'+pass+' 通过 / '+fail+' 失败）===');
 process.exit(fail?1:0);

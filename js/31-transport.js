@@ -19,6 +19,8 @@ function scheduleStep(g,time){
   if(g%2===1) t+=(swingPct/100)*stepDur()*.5;
   const solo=soloActive();
   for(const tr of state.tracks){
+    /* 哑音闸每步同步一次：播放途中点 M / S 立刻见效，延时的残留回声也一起断掉 */
+    muteLatch(tr);
     if(tr.mute) continue;
     if(solo&&!tr.solo) continue;
     const rt=rateOf(tr);
