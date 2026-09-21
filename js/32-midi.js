@@ -67,7 +67,7 @@ function exportMidi(){
     if(tr.kind==='inst'){
       for(let s=0;s<n;s++){
         if(tr.seq[s]===-1) continue;
-        const nte=clamp(rowMidi(tr.seq[s],tr.oct),0,127);
+        const nte=clamp(rowMidi(followRow(tr,s),tr.oct),0,127);   // 跟随和弦：导出用折算后的音高
         const vv=velOf(tr,s)==null?88:clamp(Math.round(velOf(tr,s)*127),1,127);
         ev.push({tick:s*stepT,seq:1,bytes:[0x90|ch,nte,vv]});
         ev.push({tick:(s+1)*stepT,seq:0,bytes:[0x80|ch,nte,0]});

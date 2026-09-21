@@ -10,7 +10,9 @@ function attachStepCellEvents(cell,tr,s,r){
   const has=()=>tr.seq[s]===r;
   const preview=()=>{
     ensureAudio(); if(audioCtx.state!=='running') audioCtx.resume();
-    playTrackNote(tr,r,audioCtx.currentTime+.02,velOf(tr,s));
+    /* 试听用「实际发声」的音高：跟随和弦开启时听到的就是折算后的音，所见即所得 */
+    const rr=tr.seq[s]===r?followRow(tr,s):r;
+    playTrackNote(tr,rr,audioCtx.currentTime+.02,velOf(tr,s));
   };
   const place=()=>{ setStep(tr,s,r); };
   cell.addEventListener('pointerdown',e=>{
@@ -84,7 +86,7 @@ function auditionNote(tr,s){
   if(now-lastAudit<55) return;
   lastAudit=now;
   ensureAudio(); if(audioCtx.state!=='running') audioCtx.resume();
-  const r=tr.seq[s];
+  const r=followRow(tr,s);                          // 试听折算后的实际音高
   if(r!==-1) playTrackNote(tr,r,audioCtx.currentTime+.02,velOf(tr,s));
 }
 function setStep(tr,s,r,tap){
@@ -158,7 +160,9 @@ function openVelPop(tr,s,dial){
   closeVelPop();
   const pop=ensureVelPop();
   const has=tr.seq[s]!==-1;
-  pop.querySelector('.vp-title').textContent='第 '+(s+1)+' 步 · '+(has?noteName(rowMidi(tr.seq[s],tr.oct)):'空');
+  const shownM=has?playMidiOf(tr,s):0;                 // 跟随和弦时显示折算后的实际音高
+  const followHint=tr.follow&&has&&followRow(tr,s)!==tr.seq[s]?'（跟随和弦 → '+noteName(shownM)+'）':'';
+  pop.querySelector('.vp-title').textContent='第 '+(s+1)+' 步 · '+(has?noteName(shownM)+followHint:'空');
   const rng=pop.querySelector('input'), val=pop.querySelector('.vp-val');
   const offBtn=pop.querySelector('.vp-off'), xBtn=pop.querySelector('.vp-close');
   const row=rng.closest('.vp-row');

@@ -85,22 +85,24 @@ function toggleOpen(tr){
   if(tr.open) openTrackId=tr.id; else if(openTrackId===tr.id) openTrackId=null;
   renderTracks(); save();
 }
-/* 「跟随和弦进行」开关：开启时该声部音高实时随和弦进行吸附；
-   回到和弦内音不再二次改动（幂等）。开时立刻吸附一次，之后和弦轨每次变化都会自动跟随 */
+/* 「跟随和弦进行」开关（非破坏性）：音序里 step 的位置永不改动，
+   只在播放 / 试听 / 导出时把音高折算到当前和弦内（见 41-chords 的 followRow）。
+   关闭后音高立刻恢复为原样——因为 tr.seq 从头到尾没被改过。
+   开 / 关只需重画面板（在网格上标出「跟随后的实际音高」） */
 const isFollowing=tr=>tr.kind==='inst'&&!!tr.follow;
 function applyFollow(tr,quiet){
-  if(!isFollowing(tr)) return false;
-  const changed=reharmonizeTrack(tr);
-  if(changed){ refreshAll(); save(); if(!quiet) toast('「'+tr.name+'」已跟随和弦进行（音高对齐）'); }
-  return changed;
+  if(!tr||tr.kind!=='inst') return false;
+  const card=view.cards.get(tr.id);
+  if(card&&card.kind==='inst'){ refreshAllSteps(tr); refreshSummary(tr); }
+  return isFollowing(tr);
 }
 function toggleFollow(tr){
   tr.follow=!tr.follow;
   applyFollow(tr,true);
   renderTracks(); save();
   toast(tr.follow
-    ?('🔗 「'+tr.name+'」跟随和弦进行：已开启（改和弦会实时跟随）')
-    :('🔓 「'+tr.name+'」跟随和弦进行：已关闭（音高不再随之改动）'));
+    ?('🔗 「'+tr.name+'」跟随和弦进行：已开启（音序位置不变，播放音高随和弦实时跟随）')
+    :('🔓 「'+tr.name+'」跟随和弦进行：已关闭（播放音高已恢复为原样）'));
 }
 
 /* ---- 声部增删 ---- */

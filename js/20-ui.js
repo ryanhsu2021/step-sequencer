@@ -726,13 +726,26 @@ function refreshStepCell(tr,s){
   if(r!==-1&&tr.last) tr.last[s]=r;
   const v=velOf(tr,s);
   const on=!!tr.userSeq&&Array.isArray(tr.userSeq)&&tr.userSeq[s]!==-1;
+  /* 跟随和弦：音序格位置不动（r），但实际发声可能被折算到别的行（fr）。
+     用 .ghost 在「实际发声行」画一枚淡色标记，让你看见它到底播成什么音。 */
+  const fr=(r!==-1)?followRow(tr,s):-1;
+  const shifted=(fr!==r&&fr!==-1);
   for(let i=0;i<col.length;i++){
     const cell=col[i]; if(!cell) continue;
     cell.classList.toggle('on',i===r);
     cell.classList.toggle('anchor',i===r&&on);            // 手摆的音（✨ 的锚点）：加一圈描边
+    cell.classList.toggle('ghost',shifted&&i===fr);       // 跟随折算后的实际发声位置
     cell.style.setProperty('--v',r===i?(v==null?.82:v):0); // 力度→格子不透明度
-    if(i===r) cell.title='第 '+(s+1)+' 步 · '+noteName(rowMidi(i,tr.oct))+'（第 '+(degOfRow(i)+1)+' 级）· 力度 '+(v==null?'默认 82':Math.round(v*100))+'%';
-    else cell.title='第 '+(s+1)+' 步 · '+noteName(rowMidi(i,tr.oct))+'（点这里放置音符）';
+    const tail='（第 '+(degOfRow(i)+1)+' 级）';
+    if(i===r){
+      cell.title='第 '+(s+1)+' 步 · '+noteName(rowMidi(i,tr.oct))+tail+
+        (shifted?' · 🔗 跟随和弦 → 实际发 '+noteName(rowMidi(fr,tr.oct)):'')+
+        ' · 力度 '+(v==null?'默认 82':Math.round(v*100)+'%');
+    }else if(shifted&&i===fr){
+      cell.title='第 '+(s+1)+' 步 · 跟随和弦后的实际发声音高 '+noteName(rowMidi(i,tr.oct))+tail;
+    }else{
+      cell.title='第 '+(s+1)+' 步 · '+noteName(rowMidi(i,tr.oct))+tail+'（点这里放置音符）';
+    }
   }
 }
 function refreshAllSteps(tr){

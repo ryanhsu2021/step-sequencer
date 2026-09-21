@@ -24,7 +24,10 @@ function scheduleStep(g,time){
     const rt=rateOf(tr);
     if(g%rt!==0) continue;                 // 速度慢的声部：每 rt 个基准步才走一格（1/8 → 每 2 步）
     const s=Math.floor(g/rt)%stepsOf(tr);  // 各声部按自己的小节数 × 自己的速度循环
-    if(tr.kind==='inst'){ const r=tr.seq[s]; if(r!==undefined&&r!==-1) playTrackNote(tr,r,t,velOf(tr,s)); }
+    if(tr.kind==='inst'){
+      const r=followRow(tr,s);                   // 跟随和弦：音序位置不变，仅播放音高折算到和弦内
+      if(r!==undefined&&r!==-1) playTrackNote(tr,r,t,velOf(tr,s));
+    }
     else { for(const id of drumHits(tr,s)) playDrumHit(tr,id,t); }
   }
   if(g%4===0){                                    // 和弦进行轨：每拍触发一次当前和弦

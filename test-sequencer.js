@@ -115,7 +115,7 @@ const expose=`
   planToChords,setProgPlan,progKeyOf,planRoman,modeIdx:()=>modeIdx,PLAN_LIB,PROG_PLANS,STYLE,ROMAN,
   rateOf,rateName,spanOf,setRate,loopSteps,RATE_VALUES,
   toggleOpen,toggleFollow,isFollowing,applyFollow,syncFollowers,openId:()=>openTrackId,followOf:t=>!!t.follow,
-  renderTracks,chordTones};`;
+  renderTracks,chordTones,followRow,playMidiOf};`;
 try{ vm.runInContext(js+expose,sandbox); }catch(e){ console.log('LOAD_FAIL:',e.stack); process.exit(1); }
 const T=sandbox.__T;
 let pass=0,fail=0;
@@ -648,66 +648,78 @@ T.loadSaved();
 const lt=T.state.tracks[0];
 chk('旧档读取：open 安全回落 true',lt.open===true,'open='+lt.open);
 chk('旧档读取：follow 安全回落 false',lt.follow===false,'follow='+lt.follow);
-/* ---- 跟随和弦：幂等 + 音高落回和弦内 ---- */
+/* ---- 跟随和弦（非破坏性）：音序位置永不改动，只在播放时折算音高 ---- */
+/* 先恢复一组完整的声部（鼓轨 + 多个乐器轨），供本节后续断言使用 */
+T.state.tracks.length=0;
+T.state.tracks.push(T.makeTrack('inst','主旋律','piano',0));
+T.state.tracks.push(T.makeTrack('inst','贝斯','bass',-1));
+T.state.tracks.push(T.makeTrack('drum','鼓组','',0));
 const ft=T.state.tracks.find(t=>t.kind==='inst');
 ft.seq=new Array(T.stepsOf(ft)).fill(-1);
 for(let i=0;i<8;i++) ft.seq[i]=i;                 // 摆 8 个音，覆盖多个音级
 ft.userSeq=null; ft.follow=false;
-const before=ft.seq.slice();
-const changed1=T.applyFollow(ft,true);
-chk('applyFollow：follow=false 时不动作',changed1===false&&String(ft.seq)===String(before),'changed='+changed1);
+const seqOrig=ft.seq.slice();
+/* follow=false：followRow 必须原样返回 */
+let same=true;
+for(let s=0;s<T.stepsOf(ft);s++) if(T.followRow(ft,s)!==ft.seq[s]) same=false;
+chk('followRow：未跟随 → 原样返回 tr.seq[s]',same,'diff');
+/* 打开跟随：tr.seq 必须一字不改 */
 ft.follow=true;
-const changed2=T.applyFollow(ft,true);
-chk('applyFollow：follow=true 时确实挪动了音',changed2===true,'changed='+changed2);
+T.applyFollow(ft,true);
+chk('跟随开启后 tr.seq 完全不变（音序位置不动）',String(ft.seq)===String(seqOrig),'seq changed');
+/* 但 followRow 折算出的音高必须全部落在和弦内 */
 const ca=T.chordAtFor(T.state.prog,T.stepsOf(ft));
-let outside=0;
+let outside=0,shifted=0;
 for(let s=0;s<T.stepsOf(ft);s++){
   const r=ft.seq[s]; if(r<0) continue;
-  if(!ca[s]||!ca[s].has(T.degOfRow(r))) outside++;
+  const fr=T.followRow(ft,s);
+  if(fr!==r) shifted++;
+  if(!ca[s]||!ca[s].has(T.degOfRow(fr))) outside++;
 }
-chk('跟随和弦：吸附后 0 个和弦外音',outside===0,'outside='+outside);
-/* 幂等：再跑一次不应再变 */
-const afterFirst=ft.seq.slice();
-const changed3=T.applyFollow(ft,true);
-chk('跟随和弦：幂等（第二次不再改动）',changed3===false&&String(ft.seq)===String(afterFirst),'changed='+changed3);
-/* 和弦变化后 syncFollowers 重新对齐：把和弦换成一个「明显不同」的级数再验证 */
-T.state.prog[0].root=(T.state.prog[0].root+3)%T.scLen();
+chk('跟随开启：playMidi 折算后 0 个和弦外音',outside===0,'outside='+outside);
+chk('跟随开启：确实有音被折算（≠ 全部不动）',shifted>0,'shifted='+shifted);
+/* 幂等：反复调用 followRow 结果稳定 */
+const fr1=[]; for(let s=0;s<T.stepsOf(ft);s++) fr1.push(T.followRow(ft,s));
+T.applyFollow(ft,true); T.applyFollow(ft,true);
+let stable=true;
+for(let s=0;s<T.stepsOf(ft);s++) if(T.followRow(ft,s)!==fr1[s]) stable=false;
+chk('followRow：反复调用结果稳定（纯函数 / 幂等）',stable,'unstable');
+/* 关闭跟随：音高立刻恢复原样 —— 因为 tr.seq 从未被改过 */
+ft.follow=false;
+let restored=true;
+for(let s=0;s<T.stepsOf(ft);s++) if(T.followRow(ft,s)!==seqOrig[s]) restored=false;
+chk('关闭跟随：playMidi 立刻恢复原音高',restored,'not restored');
+chk('关闭跟随：tr.seq 仍与原值一致',String(ft.seq)===String(seqOrig),'seq changed');
+/* 和弦变化后：不改 tr.seq，但折算结果随新和弦变化 */
+ft.follow=true; T.applyFollow(ft,true);
+const frBefore=[]; for(let s=0;s<T.stepsOf(ft);s++) frBefore.push(T.followRow(ft,s));
+const progRoot0=T.state.prog[0].root;
+T.state.prog[0].root=(progRoot0+1)%T.scLen();
 T.state.prog[0].tones=T.chordTones(T.state.prog[0].root,false);
-const synced=T.syncFollowers();
+T.syncFollowers();
+chk('和弦改动后 tr.seq 依然不变（非破坏性）',String(ft.seq)===String(seqOrig),'seq changed');
 const ca2=T.chordAtFor(T.state.prog,T.stepsOf(ft));
 let outside2=0;
 for(let s=0;s<T.stepsOf(ft);s++){
   const r=ft.seq[s]; if(r<0) continue;
-  if(!ca2[s]||!ca2[s].has(T.degOfRow(r))) outside2++;
+  if(!ca2[s]||!ca2[s].has(T.degOfRow(T.followRow(ft,s)))) outside2++;
 }
-chk('syncFollowers：和弦改动后跟随声部全部落在和弦内',outside2===0,'outside2='+outside2);
-/* 返回值语义：只有真有音被挪动时才为 true（和弦音集重叠时为 false，属正确行为） */
-const beforeSync=ft.seq.slice();
-T.state.prog[0].root=(T.state.prog[0].root+1)%T.scLen();
-T.state.prog[0].tones=[T.state.prog[0].root,(T.state.prog[0].root+2)%T.scLen(),(T.state.prog[0].root+4)%T.scLen()];
-const moved=T.syncFollowers();
-const didMove=String(ft.seq)!==String(beforeSync);
-chk('syncFollowers 返回值＝是否真有音被挪动',moved===didMove,'moved='+moved+' didMove='+didMove);
-const ca3=T.chordAtFor(T.state.prog,T.stepsOf(ft));
-let outside3=0;
-for(let s=0;s<T.stepsOf(ft);s++){
-  const r=ft.seq[s]; if(r<0) continue;
-  if(!ca3[s]||!ca3[s].has(T.degOfRow(r))) outside3++;
-}
-chk('syncFollowers 再次对齐后仍 0 个和弦外音',outside3===0,'outside3='+outside3);
-/* 幂等：连续两次 syncFollowers，第二次必然不再改动 */
-T.syncFollowers();
-const idem=T.syncFollowers();
-chk('syncFollowers：稳定后再次调用返回 false（幂等）',idem===false,'idem='+idem);
-/* 未开启跟随的声部不受影响 */
+chk('和弦改动后折算结果重新对齐（0 个外音）',outside2===0,'outside2='+outside2);
+/* 未开启跟随的声部：followRow 恒等于原值 */
 const nf=T.state.tracks.filter(t=>t.kind==='inst'&&t!==ft)[0];
 if(nf){
   nf.follow=false;
-  const nfBefore=nf.seq.slice();
   nf.seq=[0,1,2,3,4,5,6,7].concat(new Array(Math.max(0,T.stepsOf(nf)-8)).fill(-1));
-  const nfSet=nf.seq.slice();
-  T.syncFollowers();
-  chk('未开启跟随的声部不被 syncFollowers 改动',String(nf.seq)===String(nfSet),'diff');
+  let nfSame=true;
+  for(let s=0;s<T.stepsOf(nf);s++) if(T.followRow(nf,s)!==nf.seq[s]) nfSame=false;
+  chk('未开启跟随的声部：followRow 恒等于原值',nfSame,'diff');
+}
+/* 鼓轨：followRow 不参与折算 */
+const dr=T.state.tracks.find(t=>t.kind==='drum');
+if(dr){
+  const drSeq=dr.seq?dr.seq.slice():null;
+  const fr0=dr.seq&&dr.seq.length?T.followRow(dr,0):-1;
+  chk('鼓轨：followRow 原样返回（不折算）',!dr.seq||dr.seq.length===0||fr0===dr.seq[0],'fr0='+fr0);
 }
 
 console.log('\n=== '+(fail?fail+' 项失败':'全部通过')+'（'+pass+' 通过 / '+fail+' 失败）===');

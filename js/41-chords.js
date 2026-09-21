@@ -148,6 +148,31 @@ function planRoman(p){
     .map(c=>ROMAN[((((c&&c.root)||0)%L)+L)%L]||'')
     .join(' – ');
 }
+/* ============ 跟随和弦（非破坏性） ============
+   设计：音序里摆放的 step 位置永不改动（视觉稳定、关掉开关即完整复原）；
+   「跟随和弦」只在播放 / 试听 / 导出时把音高折算到当前和弦内。
+   followRow(tr,s) ＝ 该步「实际发声」用的行号：
+     · 未跟随 / 鼓轨 / 空步 → 原样返回 tr.seq[s]
+     · 已跟随 → 从原行向两侧找最近的和弦音行（找不到则原样）
+   纯函数：不读写任何持久状态，因此可安全地在调度热路径里反复调用。 */
+function followRow(tr,s){
+  if(!tr||tr.kind!=='inst') return tr?tr.seq[s]:-1;
+  const r=tr.seq[s];
+  if(r==null||r<0) return r;
+  if(!isFollowing(tr)) return r;
+  const ca=chordAtFor(state.prog,stepsOf(tr));
+  const set=ca&&ca[s];
+  if(!set||!set.size) return r;
+  if(set.has(degOfRow(r))) return r;               // 本来就在和弦内 → 不动
+  for(let d=1;d<ROWS;d++){
+    const lo=r-d, hi=r+d;
+    if(lo>=0&&set.has(degOfRow(lo))) return lo;
+    if(hi<ROWS&&set.has(degOfRow(hi))) return hi;
+  }
+  return r;
+}
+/* 该步实际发声的 MIDI 音高（播放 / 试听 / 力度面板 / MIDI 导出统一走这里） */
+function playMidiOf(tr,s){ return rowMidi(followRow(tr,s),tr.oct); }
 /* 「⟳ 对齐和弦」触发：把该声部现有音符一次性吸附到最近的和弦音（鼓除外；手动素材 userSeq 同步挪，
    ✨ 不会把旧音变回来）。没有持久跟随状态——和弦轨之后再变，需要再点一次才重新对齐 */
 function reharmonizeTrack(tr){
@@ -177,10 +202,16 @@ function reharmonizeTrack(tr){
   }
   return changed;
 }
-/* 和弦轨变化后：让所有「跟随和弦」声部实时对齐（幂等——已在和弦内的音不动） */
+/* 和弦轨变化后：跟随声部的音高由 followRow 在播放时实时折算，这里只需重画面板提示。
+   返回是否有跟随声部（用于 toast 判断）。 */
 function syncFollowers(){
   let any=false;
-  for(const tr of state.tracks){ if(isFollowing(tr)&&applyFollow(tr,true)) any=true; }
+  for(const tr of state.tracks){
+    if(!isFollowing(tr)) continue;
+    any=true;
+    const card=view.cards.get(tr.id);
+    if(card&&card.kind==='inst'){ refreshAllSteps(tr); refreshSummary(tr); }
+  }
   return any;
 }
 /* ---- 和弦进行轨发声：播放时每拍触发当前和弦，音色 / 音量 / 延时可选（默认跟风格） ---- */
