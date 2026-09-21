@@ -374,7 +374,57 @@ function shortInst(id){
 }
 /* 原生 range 在桩里没有 setter：包一层，方便测试直接驱动 */
 function setRangeVal(r,v){ r.value=v; if(r.dispatchEvent) r.dispatchEvent('input',{target:r}); }
-/* 一条通道条：横排「色点 · 名称 / 音色 / 效果 / M S / 推子 / 声像」 */
+/* 延时效果开关 + 下拉 + Mix：每条通道条共用（鼓声部不生成它，直接显示「无延时」）。
+   开关是<b>每条通道条自己的</b>——默认关，所以一行里只要有一条旋律声部开着延时，
+   那条通道条的「效果」格就会占两行，其余通道条按同一高度对齐，效果格不再空出大片留白。 */
+/* 每个开关需要唯一 id 才能让 label 用 for 指过来（避免依赖 label 嵌套） */
+let mxFxSeq=0;
+function mxFxControl(o){
+  const wrap=document.createElement('span'); wrap.className='mx-fxbox';
+  /* 上排：开关 + 预设下拉 */
+  const rowA=document.createElement('span'); rowA.className='mx-fxwrap';
+  const cb=document.createElement('input'); cb.type='checkbox';
+  cb.className='mx-fxon';
+  const id='mxon-'+String(mxFxSeq++);
+  cb.id=id;
+  const on0=o.on();
+  cb.checked=on0;
+  /* label 显式指向 checkbox（htmlFor），不靠嵌套——避免任何重排/克隆把节点搬走 */
+  const lab=document.createElement('label'); lab.className='mx-hasfx';
+  lab.htmlFor=id; lab.setAttribute('for',id);
+  lab.textContent='延时';
+  cb.title='给「'+o.name+'」开 / 关延时（回声时间随 BPM 自动同步）';
+  lab.title=cb.title;
+  const s=document.createElement('select');
+  s.className='mx-fxsel';
+  DELAY_PRESETS.forEach(p=>s.add(new Option(p.name,p.id)));
+  s.value=o.val();
+  s.disabled=!on0;
+  s.title='「'+o.name+'」延时效果（回声时间随 BPM 自动同步）';
+  cb.addEventListener('change',()=>{
+    o.set(on0?'off':(s.value==='off'?'quarter':s.value));
+    toast(cb.checked?('🎚 「'+o.name+'」延时已开 → '+s.options[s.selectedIndex].text)
+                    :('「'+o.name+'」延时已关'));
+  });
+  s.addEventListener('change',()=>{
+    if(s.value==='off'){ o.set('off'); toast('「'+o.name+'」延时已关'); return; }
+    o.set(s.value);
+    toast('「'+o.name+'」延时 → '+s.options[s.selectedIndex].text);
+  });
+  rowA.append(cb,lab,s);
+  /* 下排：强度 Mix 滑杆（关着的时候禁用，避免误导） */
+  const rowB=document.createElement('span'); rowB.className='mx-fxrow';
+  const mix=document.createElement('input'); mix.type='range'; mix.min=0; mix.max=100;
+  mix.value=Math.round((o.mix()==null?1:o.mix())*100);
+  mix.disabled=!on0;
+  mix.title='延时强度 Mix（干声 / 回声的比例）';
+  const mv=document.createElement('span'); mv.className='mx-v'; mv.textContent=mix.value;
+  mix.addEventListener('input',()=>{ mv.textContent=mix.value; o.setMix(+mix.value/100); });
+  rowB.append(mix,mv);
+  wrap.append(rowA,rowB);
+  return wrap;
+}
+/* 一条通道条：上行「色点 · 编号 · 名称/音色 · 效果」，下行「M S · 推子 · 声像」 */
 function mixerStrip(o){
   const row=document.createElement('div');
   row.className='mx-strip'+(o.kind==='chord'?' chord':'');
@@ -466,23 +516,10 @@ function renderMixer(){
           c.title='鼓声部不做延时：给鼓点加回声容易糊，音量用右侧推子调';
           return c;
         }
-        const s=document.createElement('select');
-        s.className='mx-fxsel';
-        DELAY_PRESETS.forEach(p=>s.add(new Option(p.name,p.id)));
-        s.value=tr.fx||'off';
-        s.title='「'+tr.name+'」延时效果（回声时间随 BPM 自动同步）';
-        s.addEventListener('change',()=>{
-          setTrackDelay(tr,s.value);
-          toast('「'+tr.name+'」延时 → '+s.options[s.selectedIndex].text);
+        return mxFxControl({
+          name:tr.name, on:()=>(tr.fx||'off')!=='off', val:()=>tr.fx||'off', mix:()=>tr.fxMix,
+          set:v=>setTrackDelay(tr,v), setMix:v=>setTrackFxMix(tr,v),
         });
-        const wrap=document.createElement('span'); wrap.className='mx-fxwrap';
-        const mix=document.createElement('input'); mix.type='range'; mix.min=0; mix.max=100;
-        mix.value=Math.round((tr.fxMix==null?1:tr.fxMix)*100);
-        mix.title='延时强度 Mix（干声 / 回声的比例）';
-        const mv=document.createElement('span'); mv.className='mx-v'; mv.textContent=mix.value;
-        mix.addEventListener('input',()=>{ mv.textContent=mix.value; setTrackFxMix(tr,+mix.value/100); });
-        wrap.append(s,mix,mv);
-        return wrap;
       })(),
       vol:tr.vol,
       pan:drum?null:tr.pan,
@@ -497,25 +534,10 @@ function renderMixer(){
     kind:'chord',tag:'♩',name:'和弦进行轨',bg:'#141414',
     title:'和弦进行轨的总线',mute:!!chordMute,solo:false,canSolo:false,
     sub:shortInst(chordInstOf()),subFull:'和弦音色：'+INST_NAME(chordInstOf()),
-    fxEl:(()=>{
-      const s=document.createElement('select');
-      s.className='mx-fxsel';
-      DELAY_PRESETS.forEach(p=>s.add(new Option(p.name,p.id)));
-      s.value=chordFx;
-      s.title='和弦进行轨的延时效果（回声时间随 BPM 自动同步）';
-      s.addEventListener('change',()=>{
-        setChordFx(s.value);
-        toast('和弦进行轨延时 → '+s.options[s.selectedIndex].text);
-      });
-      const wrap=document.createElement('span'); wrap.className='mx-fxwrap';
-      const mix=document.createElement('input'); mix.type='range'; mix.min=0; mix.max=100;
-      mix.value=Math.round((chordFxMix==null?1:chordFxMix)*100);
-      mix.title='和弦轨延时强度 Mix';
-      const mv=document.createElement('span'); mv.className='mx-v'; mv.textContent=mix.value;
-      mix.addEventListener('input',()=>{ mv.textContent=mix.value; setChordFxMix(+mix.value/100); });
-      wrap.append(s,mix,mv);
-      return wrap;
-    })(),
+    fxEl:mxFxControl({
+      name:'和弦进行轨', on:()=>(chordFx||'off')!=='off', val:()=>chordFx||'off', mix:()=>chordFxMix,
+      set:v=>setChordFx(v), setMix:v=>setChordFxMix(v),
+    }),
     vol:chordVol,
     pan:null,
     onVol:v=>setChordVolume(v),
@@ -525,8 +547,9 @@ function renderMixer(){
   }));
   box.appendChild(grid);
   const hint=document.createElement('div'); hint.className='mx-hint';
-  hint.innerHTML='每个声部一条通道条：<b>推子</b>＝音量（拖动即时生效）、<b>M</b> 静音、<b>S</b> 独奏，'+
-    '中间的<b>效果</b>下拉就是该声部的延时（鼓声部不做延时，所以显示「— 无延时」）；'+
+  hint.innerHTML='每个声部一条通道条：<b>推子</b>＝音量（拖动即时生效）、<b>M</b> 静音、<b>S</b> 独奏；'+
+    '中间的<b>延时</b>开关默认关——勾上才生效，右边的下拉选回声预设、下面的滑杆调回声比例'+
+    '（鼓声部不做延时，所以显示「— 无延时」）；'+
     '右侧 <b>L / C / R</b> 是声像（鼓与和弦轨保持居中）。'+
     '这里和声部卡里的参数是<b>同一份状态</b>——在哪边改都会一起变，也会一起存档。';
   box.appendChild(hint);

@@ -107,7 +107,7 @@ class El{
 }
 /* 极简选择器引擎：支持 tag / .class / [attr] 组合（如 button.mx-m[data-act]），不支持后代（由外层拆词处理） */
 function selMatch(el,sel){
-  if(!el||!el._cls) return false;
+  if(!el||!el._cls||el.tagName==='#TXT') return false;
   const mm=String(sel).match(/^([\w-]+)?((?:\.[\w-]+)*)((?:\[[^\]]+\])*)$/); if(!mm) return false;
   const [,tag,clss,attrs]=mm;
   if(tag&&el.tagName!==tag.toUpperCase()) return false;
@@ -145,6 +145,8 @@ const byId={};
 const document={
   getElementById:id=>(byId[id]||(byId[id]=new El('div'))),
   createElement:tag=>new El(tag),
+  /* 复合控件（如「延时」开关的文字标签）会用到它——桩里造一个纯文本节点 */
+  createTextNode:t=>Object.assign(new El('#txt'),{textContent:String(t)}),
   querySelector:()=>null, querySelectorAll:()=>[],   // 顶层查询：测试桩不需要真实页脚
   addEventListener(){}, removeEventListener(){},
   activeElement:{tagName:'BODY'},
@@ -797,6 +799,7 @@ mx1.bars=1; mx2.bars=1; mx3.bars=1;
 mx1.seq=new Array(16).fill(-1); mx1.seq[0]=0; mx1.seq[4]=4;
 mx1.userSeq=null; mx1.follow=false;
 mx1.fx='dot8'; mx1.fxMix=.5; mx1.pan=0;
+mx2.fx='off'; mx2.fxMix=.5;                    /* 贝斯不开延时——用来验证「延时开关默认关」这一路 */
 mx2.seq=new Array(16).fill(-1); mx2.seq[0]=6;
 T.state.tracks.push(mx1,mx2,mx3);
 T.renderTracks();
@@ -843,19 +846,38 @@ chk('setTrackDelay 对鼓声部无效（强制回落 off）',mx3.fx==='off','fx=
 const drumFader=T.mixerCard().querySelectorAll('.mx-fader input')[2];
 drumFader.value=55; drumFader.fire('input');
 chk('鼓声部音量可调（推子 → tr.vol）',mx3.vol===.55,'vol='+mx3.vol);
-/* ---- 旋律声部：延时下拉 + Mix 强度 ---- */
+/* ---- 延时开关：每条通道条各自一个，默认关（一行里效果格的高度由它决定） ---- */
+const swOf=strip=>{ const l=strip.querySelector('.mx-fxwrap'); return l?l.querySelector('input[type=checkbox]'):null; };
 const melStrip=T.mixerCard().querySelectorAll('.mx-strip')[0];
-const fxSel=melStrip.querySelector('.mx-fxsel');
+chk('每条通道条都有延时开关（鼓声部没有——它压根不做延时）',
+    T.mixerCard().querySelectorAll('.mx-fxwrap input[type=checkbox]').length===strips.length-1,
+    'sw='+T.mixerCard().querySelectorAll('.mx-fxwrap input[type=checkbox]').length);
+chk('鼓声部通道条里没有延时开关',!swOf(drumStrip));
+const melSw=swOf(melStrip);
+chk('声部本来就开着延时 → 开关是勾上的',!!melSw&&melSw.checked===true);
+const bassStrip=T.mixerCard().querySelectorAll('.mx-strip')[1];
+const bassSw=swOf(bassStrip);
+chk('声部没开延时 → 开关不勾（默认关）',!!bassSw&&bassSw.checked===false,'checked='+(bassSw&&bassSw.checked));
+bassSw.fire('change');
+chk('打开开关 → 声部拿到一个延时（默认四分之一拍）',mx2.fx==='quarter','fx='+mx2.fx);
+T.renderMixer();
+const bassSw2=swOf(T.mixerCard().querySelectorAll('.mx-strip')[1]);
+chk('重绘后开关保持勾上',!!bassSw2&&bassSw2.checked===true);
+bassSw2.fire('change');
+chk('再点一下 → 延时关掉',mx2.fx==='off','fx='+mx2.fx);
+/* ---- 旋律声部：延时下拉 + Mix 强度 ---- */
+const melStrip2=T.mixerCard().querySelectorAll('.mx-strip')[0];
+const fxSel=melStrip2.querySelector('.mx-fxsel');
 chk('旋律声部通道条有延时下拉，且回显当前值（dot8）',!!fxSel&&fxSel.value==='dot8',
     'val='+(fxSel&&fxSel.value));
 fxSel.value='space'; fxSel.fire('change');
 chk('在调音台换延时 → 声部 fx 跟着变',mx1.fx==='space','fx='+mx1.fx);
-const fxMixR=melStrip.querySelector('.mx-fxwrap input');
+const fxMixR=melStrip2.querySelector('.mx-fxrow input[type=range]');
 chk('延时强度 Mix 推子回显当前值（50）',!!fxMixR&&fxMixR.value==='50','v='+(fxMixR&&fxMixR.value));
 fxMixR.value=20; fxMixR.fire('input');
 chk('在调音台改 Mix → 声部 fxMix 跟着变',mx1.fxMix===.2,'fxMix='+mx1.fxMix);
 /* ---- 声像：只有旋律声部有（鼓与和弦轨居中） ---- */
-const panR=melStrip.querySelector('.mx-pan input');
+const panR=melStrip2.querySelector('.mx-pan input');
 chk('旋律声部有声像推子，初值居中（0）',!!panR&&panR.value==='0','v='+(panR&&panR.value));
 panR.value=-60; panR.fire('input');
 chk('拖声像 → 声部 pan 跟着变',mx1.pan===-.6,'pan='+mx1.pan);
@@ -894,7 +916,12 @@ chk('和弦轨 M 生效（＝和弦声开关）',T.chordMuteGetter()===true);
 T.setChordMute(false);
 chk('和弦轨取消静音',T.chordMuteGetter()===false);
 const chFx=chStrip.querySelector('.mx-fxsel');
-chFx.value='dot8'; chFx.fire('change');
+const chSw=swOf(chStrip);
+chk('和弦轨延时开关初始未勾（默认关）',!!chSw&&chSw.checked===false);
+chSw.fire('change');
+chk('勾上和弦轨延时开关 → 默认给它四分之一拍',T.chordFxGetter()==='quarter','fx='+T.chordFxGetter());
+chStrip.querySelector('.mx-fxsel').value='dot8';
+chStrip.querySelector('.mx-fxsel').fire('change');
 chk('和弦轨延时可在调音台切换',T.chordFxGetter()==='dot8','fx='+T.chordFxGetter());
 T.setChordFx('off');
 /* ---- 播放状态指示 ---- */

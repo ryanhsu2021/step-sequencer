@@ -355,7 +355,10 @@ input[type=range]:hover::-webkit-slider-thumb{transform:scale(1.15)}
 .dcell.ph{outline:2.5px solid var(--tci);outline-offset:-1px}
 .dnote{font-size:11px;color:color-mix(in srgb,var(--tci) 55%,transparent);margin:-6px 0 12px 50px;line-height:1.5}
 
-/* ---------- 调音台 Mixer（页面最底部）：每个声部一条通道条，纵向排开 ---------- */
+/* ---------- 调音台 Mixer（页面最底部）：每个声部一条通道条 ----------
+   每行几个声部由各自的宽度决定——容器查询让「一个通道条 ≥ 480px 才排第二列」，
+   因此 900~1100px 这类「两列各 ~400px」的尴尬宽度会自动退成一行一个声部。
+   每条通道条内部走两行：上行 色点·编号·名称/音色·效果参数，下行 M/S·推子·声像。 */
 .mxcard{
   margin-top:20px;padding:16px 18px 14px;border-radius:var(--radius);
   background:var(--card);color:var(--ink);box-shadow:0 12px 32px rgba(20,20,20,.09);
@@ -370,45 +373,63 @@ input[type=range]:hover::-webkit-slider-thumb{transform:scale(1.15)}
   color:var(--dim);background:var(--soft);
 }
 .mx-live.on{color:#fff;background:#f4602c}
-.mx-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:6px 18px}
-.mx-strip{
-  display:flex;align-items:center;gap:9px;min-width:0;
-  padding:6px 10px;border-radius:14px;transition:background .14s,opacity .16s;
+/* 一行几个声部由容器自身宽度决定：容器 ≥ 1000px 才排 2 列（排除 gap 后每列 ≥ 492px），
+   否则一律 1 列——彻底消灭「两列各 ~400px」导致名称被省略号截断、推子拖不动的中间态。
+   支持容器查询的浏览器走 @container，不支持的（老 Safari / 老 Firefox）由后面的 @supports not 兜底。 */
+.mxcard{container-type:inline-size;container-name:mxcard}
+.mx-grid{display:grid;grid-template-columns:1fr;gap:10px}
+@container mxcard (min-width:1000px){
+  .mx-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 16px}
 }
-.mx-strip:hover{background:color-mix(in srgb,var(--ink) 5%,transparent)}
+.mx-strip{
+  display:grid;grid-template-columns:auto auto minmax(0,1fr) auto;
+  grid-template-areas:"dot tag cap fx" "ctl ctl fader pan";
+  align-items:center;gap:6px 9px;min-width:0;
+  padding:8px 12px;border-radius:16px;transition:background .14s,opacity .16s;
+  background:color-mix(in srgb,var(--ink) 3.5%,transparent);
+}
+.mx-strip:hover{background:color-mix(in srgb,var(--ink) 7%,transparent)}
 .mx-strip.mx-muted{opacity:.45}
-.mx-strip.chord{background:color-mix(in srgb,#141414 6%,transparent)}
-.mx-dot{width:9px;height:9px;flex:none;border-radius:50%;background:#888;box-shadow:inset 0 0 0 1px rgba(0,0,0,.18)}
+.mx-strip.chord{background:color-mix(in srgb,#141414 7%,transparent)}
+.mx-dot{grid-area:dot;width:9px;height:9px;flex:none;border-radius:50%;background:#888;box-shadow:inset 0 0 0 1px rgba(0,0,0,.18)}
 .mx-tag{
-  width:18px;flex:none;text-align:center;font-family:var(--mono);font-size:10px;font-weight:700;
+  grid-area:tag;min-width:16px;flex:none;text-align:center;font-family:var(--mono);font-size:10px;font-weight:700;
   color:var(--dim);
 }
-.mx-cap{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1 1 84px}
-.mx-name{font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.mx-sub{font-size:10px;font-style:normal;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.mx-fx{flex:0 1 auto;min-width:0;display:flex;align-items:center}
-.mx-fxwrap{display:flex;align-items:center;gap:6px;min-width:0}
-.mx-fxsel{
-  font:inherit;font-size:10.5px;font-weight:600;padding:3px 7px;max-width:134px;
-  border-radius:999px;background:rgba(255,255,255,.9);
+/* 名称与音色纵向堆叠：省掉两者之间的横向间距，窄列下也不互相抢宽度 */
+.mx-cap{grid-area:cap;display:flex;flex-direction:column;gap:1px;min-width:0;line-height:1.25}
+.mx-name{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.mx-sub{font-size:10.5px;font-style:normal;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.mx-fx{grid-area:fx;display:flex;flex-direction:column;align-items:flex-end;justify-content:center;gap:3px;min-width:0}
+.mx-fxbox{display:flex;flex-direction:column;align-items:flex-end;gap:3px;min-width:0;max-width:100%}
+.mx-fxwrap{display:flex;align-items:center;justify-content:flex-end;gap:7px;min-width:0;max-width:100%}
+.mx-fxrow{display:flex;align-items:center;justify-content:flex-end;gap:6px;min-width:0;max-width:100%}
+.mx-hasfx{
+  display:inline-flex;align-items:center;gap:6px;cursor:pointer;user-select:none;
+  font-size:10.5px;color:var(--dim);white-space:nowrap;
 }
-.mx-fxwrap input[type=range]{width:46px}
-.mx-nofx{font-size:10px;color:var(--dim);white-space:nowrap;cursor:help}
-.mx-ctl{display:flex;gap:4px;flex:none}
+.mx-hasfx input[type=checkbox]{width:13px;height:13px;margin:0;accent-color:#f4602c;cursor:pointer;flex:none}
+.mx-fxsel{
+  font:inherit;font-size:11px;font-weight:600;padding:4px 8px;max-width:150px;
+  min-width:0;flex:1 1 auto;border-radius:999px;background:rgba(255,255,255,.92);
+}
+.mx-fxwrap input[type=range],.mx-fxrow input[type=range]{width:64px;flex:none}
+.mx-nofx{font-size:10.5px;color:var(--dim);white-space:nowrap;cursor:help}
+.mx-ctl{grid-area:ctl;display:flex;gap:5px;flex:none;align-self:center}
 .mx-btn{
-  width:23px;height:23px;border-radius:50%;cursor:pointer;padding:0;font:inherit;font-size:10.5px;font-weight:750;
+  width:26px;height:26px;border-radius:50%;cursor:pointer;padding:0;font:inherit;font-size:11px;font-weight:750;
   border:1.5px solid rgba(20,20,20,.18);background:transparent;color:var(--muted);transition:.13s;
 }
 .mx-btn:hover:not(:disabled){border-color:rgba(20,20,20,.45);color:var(--ink)}
 .mx-btn:disabled{opacity:.3;cursor:not-allowed}
 .mx-btn.mx-m.on{background:#e89b3c;border-color:#e89b3c;color:#fff}
 .mx-btn.mx-s.on{background:#3c9de8;border-color:#3c9de8;color:#fff}
-.mx-fader{display:flex;align-items:center;gap:5px;flex:1 1 84px;min-width:0}
-.mx-fader input[type=range]{flex:1;width:auto;min-width:56px}
-.mx-v{font-family:var(--mono);font-size:10px;color:var(--muted);min-width:26px;text-align:right}
-.mx-pan{display:flex;align-items:center;gap:4px;flex:0 1 88px;min-width:0}
-.mx-pan input[type=range]{flex:1;width:auto;min-width:42px}
-.mx-pan-off{font-size:10px;color:var(--dim);justify-content:center}
+.mx-fader{grid-area:fader;display:flex;align-items:center;gap:6px;min-width:0;align-self:center}
+.mx-fader input[type=range]{flex:1;width:auto;min-width:80px}
+.mx-v{font-family:var(--mono);font-size:10.5px;color:var(--muted);min-width:28px;text-align:right;flex:none}
+.mx-pan{grid-area:pan;display:flex;align-items:center;gap:5px;flex:none;justify-content:flex-end;align-self:center}
+.mx-pan input[type=range]{width:72px;flex:none}
+.mx-pan-off{font-size:10.5px;color:var(--dim);min-width:72px;text-align:center}
 .mx-hint{margin-top:10px;font-size:11px;line-height:1.75;color:var(--muted)}
 .mx-hint b{color:var(--ink)}
 
@@ -494,14 +515,15 @@ footer summary::marker{color:var(--muted)}
   .chip input[type=range]{width:64px}
   input[type=range]{height:24px}
   input[type=range]::-webkit-slider-thumb{width:18px;height:18px;margin-top:-7px}   /* 触屏拇指更大的滑块 */
-  /* 调音台：单列（每条通道条独占一行），推子留足长度 */
+  /* 调音台：单列（一行一个声部），通道条两行结构照旧但控件放大到好按 */
   .mxcard{margin-top:16px;padding:13px 12px 11px;border-radius:20px}
-  .mx-grid{grid-template-columns:1fr;gap:3px}
-  .mx-strip{padding:8px 6px;gap:8px}
-  .mx-fxsel{max-width:116px}
-  .mx-fxwrap input[type=range]{width:40px}
-  .mx-fader{flex:1 1 70px}
-  .mx-pan{flex:0 1 76px}
+  .mx-strip{padding:9px 11px;gap:8px 10px}
+  .mx-name{font-size:13.5px}
+  .mx-fxsel{max-width:44vw;padding:5px 10px}
+  .mx-fxwrap input[type=range]{width:58px}
+  .mx-fader input[type=range]{min-width:64px}
+  .mx-pan input[type=range],.mx-pan-off{width:64px;min-width:64px}
+  .mx-btn{width:30px;height:30px;font-size:12px}
 }
 /* 手机：顶栏 = 常驻一行「▶ 播放 · BPM · ⚙」，其余控件收进 ⚙ 展开面板（分组换行，不再横向挤压）；
    步进区 / 鼓网格本就支持横向滚动——保留触控尺寸，不再为塞进屏幕而缩小到难按 */
@@ -551,14 +573,9 @@ footer summary::marker{color:var(--muted)}
   .cseg{flex-basis:110px;min-width:110px;padding:9px 12px 10px}
   .cseg .cname{font-size:20px}
   footer{padding:14px 14px;border-radius:20px}
-  /* 手机上的通道条：名称 + 效果一行，M/S + 推子 + 声像一行（推子够长才好拖） */
-  .mx-strip{flex-wrap:wrap;row-gap:6px}
-  .mx-cap{flex:1 1 auto}
-  .mx-ctl{order:3;margin-left:auto}
-  .mx-fader{order:4;flex:1 1 100%;min-width:0}
-  .mx-pan{order:5;flex:0 1 104px}
-  .mx-fx{order:2}
-  .mx-fxsel{max-width:38vw}
+  /* 通道条在手机上是「名称 + 效果」一行、「M/S + 推子 + 声像」一行：
+     两行结构由 .mx-strip 的 grid-template-areas 提供，这里只压缩名称区与效果下拉 */
+  .mx-fxsel{max-width:44vw}
 }
 @media (max-width:420px){
   .stepnum{height:18px}
@@ -569,4 +586,25 @@ footer summary::marker{color:var(--muted)}
   .btn{padding:9px 12px}
   .btn.primary{min-width:78px}
   select{max-width:40vw}
+  /* 超窄屏：名称一行，效果独占一行铺满，M/S 与推子一行，声像换到下一行 */
+  .mx-strip{grid-template-areas:"dot tag cap" "fx fx fx" "ctl fader pan";
+    grid-template-columns:auto auto minmax(0,1fr);gap:7px 8px}
+  .mx-cap{min-width:0}
+  .mx-name,.mx-sub{font-size:12.5px}
+  .mx-fx{align-items:stretch}
+  .mx-fxbox{align-items:stretch}
+  .mx-fxwrap{justify-content:flex-start}
+  .mx-fxrow{justify-content:flex-start}
+  .mx-fxsel{max-width:none;flex:1 1 auto;font-size:10.5px;padding:3px 7px}
+  .mx-fxrow input[type=range]{width:auto;flex:1 1 auto}
+  .mx-fader input[type=range]{min-width:56px}
+  .mx-pan input[type=range],.mx-pan-off{width:56px;min-width:56px}
+}
+
+/* 不支持容器查询的浏览器（老 Safari / 老 Firefox）：退回媒体查询，
+   同样保证「两列时每列 ≥ 480px」——1120px 是能安全排两列的最小视口。 */
+@supports not (container-type:inline-size){
+  @media (min-width:1120px){
+    .mx-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 16px}
+  }
 }
