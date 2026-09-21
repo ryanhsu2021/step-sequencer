@@ -134,29 +134,43 @@ function reharmonizeTrack(tr){
   }
   return changed;
 }
-/* ---- 和弦进行轨发声：播放时每拍触发当前和弦，音色 / 音量可选（默认跟风格） ---- */
-let chordInst='', chordMute=false, chordVol=.8;
+/* ---- 和弦进行轨发声：播放时每拍触发当前和弦，音色 / 音量 / 延时可选（默认跟风格） ---- */
+let chordInst='', chordMute=false, chordVol=.8, chordFx='off', chordFxMix=1;
 const chordInstOf=()=>chordInst||(SP_.chordI&&SP_.chordI[0])||'epiano';
+/* 和弦轨的专属输出总线：复用与声部同构的链路（gain → 延时发送 → master），
+   总线号 __chordbus 不等于任何声部 id，所以与声部互不干扰 */
+const CHORD_BUS_ID='__chordbus';
+const chordBusSpec=()=>({id:CHORD_BUS_ID,vol:chordVol,pan:0,fx:chordFx,fxMix:chordFxMix});
+function chordDest(){ ensureAudio(); return busFor(chordBusSpec()); }
+function applyChordFx(){
+  const b=busCache.get(CHORD_BUS_ID);
+  if(b&&audioCtx) applyTrackFx(chordBusSpec(),b);
+}
+function setChordFx(id){
+  chordFx=DELAY_IDS.has(id)?id:'off';
+  applyChordFx();
+}
 function playChordSeg(ch,time){
   try{
     if(!audioCtx||chordMute) return;
-    const inst=chordInstOf(), t0=time+.012, g=.2*chordVol;
+    const dest=chordDest(); if(!dest) return;
+    const inst=chordInstOf(), t0=time+.012, g=.2;      // 音量交给总线 gain（chordVol）统一控制
     ch.tones.forEach((d,i)=>{
       const r=rowForDegreeNear(d,4+i);
-      (VOICE[inst]||VOICE.epiano)(440*Math.pow(2,(rowMidi(r,0)-69)/12),t0+i*.02,masterGain,g,stepDur()*3.6);
+      (VOICE[inst]||VOICE.epiano)(440*Math.pow(2,(rowMidi(r,0)-69)/12),t0+i*.02,dest,g,stepDur()*3.6);
     });
   }catch(e){}
 }
-/* 试听一个和弦（用风格的色彩音色弹三/四音） */
+/* 试听一个和弦（用风格的色彩音色弹三/四音；同样走和弦轨总线，延时听得见） */
 function audChord(ch){
   try{
-    ensureAudio(); if(!audioCtx) return;
+    const dest=chordDest(); if(!dest) return;
     if(audioCtx.state!=='running') audioCtx.resume();
     const inst=(SP_.chordI&&SP_.chordI[0])||'epiano';
     const t0=audioCtx.currentTime+.04;
     ch.tones.forEach((d,i)=>{
       const r=rowForDegreeNear(d,4+i);
-      (VOICE[inst]||VOICE.epiano)(440*Math.pow(2,(rowMidi(r,0)-69)/12),t0+i*.02,masterGain,.55,stepDur()*3);
+      (VOICE[inst]||VOICE.epiano)(440*Math.pow(2,(rowMidi(r,0)-69)/12),t0+i*.02,dest,.55,stepDur()*3);
     });
   }catch(e){}
 }

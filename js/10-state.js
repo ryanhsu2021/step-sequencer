@@ -114,6 +114,7 @@ function save(){
         progBars:progBars(),
         progEdited:!!state.progEdited,
         chordVol:chordVol,
+        chordFx:chordFx||'off',chordFxMix:chordFxMix==null?1:chordFxMix,
         tracks:state.tracks.map(t=>({kind:t.kind,name:t.name,inst:t.inst,oct:t.oct,bars:barsOf(t),seq:t.seq,
           useq:(t.kind==='inst'&&Array.isArray(t.userSeq))?t.userSeq:null,
           vel:(t.kind==='inst'&&Array.isArray(t.vel))?t.vel:null,
@@ -149,6 +150,8 @@ function loadSaved(){
     const psum=state.prog.reduce((a,c)=>a+(c.beats|0),0);
     state.progBars=pb||clamp(Math.round(psum/4)||1,1,MAX_BARS);   // 旧档：按原进行的总拍数反推小节数
     chordVol=(typeof d.chordVol==='number'&&d.chordVol>=0&&d.chordVol<=1)?d.chordVol:.8;
+    chordFx=DELAY_IDS.has(d.chordFx)?d.chordFx:'off';
+    chordFxMix=(typeof d.chordFxMix==='number'&&d.chordFxMix>=0&&d.chordFxMix<=1)?d.chordFxMix:1;
     state.tracks=d.tracks.slice(0,MAX_TRACKS).map(o=>{
       const t=makeTrack(o.kind,o.name,o.inst,o.oct);
       const bars=clamp(o.bars|0,1,MAX_BARS);

@@ -101,7 +101,8 @@ function renderChord(){
       '<button class="cc-btn'+(chordMute?' off':'')+'" data-act="cmute" title="播放时和弦进行轨是否发声（每拍触发一次当前和弦）">'+
         (chordMute?'🔇 和弦声 关':'🔊 和弦声 开')+'</button>'+
     '</div>'+
-    '<select class="cc-inst" title="和弦进行轨播放时的音色"></select>';
+    '<select class="cc-inst" title="和弦进行轨播放时的音色"></select>'+
+    '<select class="cc-inst cc-fx" title="和弦进行轨的延时效果（回声时间随 BPM 自动同步）"></select>';
   head.querySelectorAll('button[data-act]').forEach(b=>b.addEventListener('click',()=>{
     const a=b.dataset.act;
     if(a==='rand'){
@@ -124,7 +125,11 @@ function renderChord(){
   const ctl=head.querySelector('.cc-ctl');
   if(ctl){
     ctl.appendChild(chipSeg('小节',[1,2,3,4,8],progBars(),n=>setProgBars(n)));
-    ctl.appendChild(chipRange('音量',0,100,Math.round(chordVol*100),v=>v,x=>{chordVol=x/100;save();}));
+    ctl.appendChild(chipRange('音量',0,100,Math.round(chordVol*100),v=>v,x=>{chordVol=x/100;applyChordFx();save();}));
+    const mixChip=chipRange('延时 Mix',0,100,Math.round((chordFxMix==null?1:chordFxMix)*100),v=>v,
+      x=>{chordFxMix=x/100;applyChordFx();save();});
+    mixChip.title='和弦进行轨延时效果量（干声 / 回声的比例，0＝只听干声）';
+    ctl.appendChild(mixChip);
   }
   const ciSel=head.querySelector('select.cc-inst');
   if(ciSel){
@@ -133,6 +138,16 @@ function renderChord(){
     ciSel.addEventListener('change',()=>{
       chordInst=ciSel.value; save();
       toast('和弦进行轨音色 → '+INST_NAME(chordInst));
+    });
+  }
+  const fxSel=head.querySelector('select.cc-fx');
+  if(fxSel){
+    DELAY_PRESETS.forEach(p=>fxSel.add(new Option(p.name,p.id)));
+    fxSel.value=chordFx;
+    fxSel.title='和弦进行轨的延时效果：回声时间随 BPM 自动同步（试听即时生效）';
+    fxSel.addEventListener('change',()=>{
+      setChordFx(fxSel.value); save();
+      toast('和弦进行轨延时 → '+fxSel.options[fxSel.selectedIndex].text);
     });
   }
   box.appendChild(head);
@@ -180,6 +195,7 @@ function renderChord(){
   const hint=document.createElement('div'); hint.className='cc-hint';
   hint.innerHTML='每个方块的宽度＝它持续的拍数，<b>点方块</b>挑和弦（级数表里点一下即可替换并试听），'+
     '<b>‹ ›</b> 改拍长、<b>⧉</b> 拆分插入、<b>✕</b> 删除；方块的「第几拍」就是它覆盖的范围。'+
+    '顶部右侧两个下拉分别是<b>和弦音色</b>与<b>延时 Delay</b>（配合「延时 Mix」滑杆），试听即刻听得到回声。'+
     '各声部（鼓除外）卡片上的 <b>⟳ 吸附和弦</b> 可把现有音符一次性对齐到这条进行。';
   box.appendChild(hint);
 }

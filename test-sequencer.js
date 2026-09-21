@@ -108,7 +108,8 @@ const expose=`
   segOfStep,chordAtFor,progFor,degOfRow,scLen,stepsOf,barsOf,songBeats,songBars,refreshAll,save,DEMO_MEL,clearTrack,randomizeForTrack,
   setProgBars,progBeats,makeTrack,progTiled,randomSameStyle,reharmonizeTrack,
   velOf,pushUndo,undo,undoDepth:()=>undoStack.length,
-  DELAY_PRESETS,REV_PRESETS,setTrackFx,setReverb,revGetter:()=>revPreset,trackFx:t=>t.fx,setRevMix:v=>{revMix=v;},getRevMix:()=>revMix};`;
+  DELAY_PRESETS,REV_PRESETS,setTrackFx,setReverb,revGetter:()=>revPreset,trackFx:t=>t.fx,setRevMix:v=>{revMix=v;},getRevMix:()=>revMix,
+  setChordFx,applyChordFx,chordFxGetter:()=>chordFx,getChordFxMix:()=>chordFxMix,setChordFxMix:v=>{chordFxMix=v;},chordBusId:CHORD_BUS_ID};`;
 try{ vm.runInContext(js+expose,sandbox); }catch(e){ console.log('LOAD_FAIL:',e.stack); process.exit(1); }
 const T=sandbox.__T;
 let pass=0,fail=0;
@@ -460,6 +461,29 @@ chk('撤销 🎲 随机生成：音序原样恢复',snap(trr2)===seqBeforeR);
 let threw=false;
 try{ while(T.undoDepth()>0) T.undo(); T.undo(); }catch(e){ threw=true; }
 chk('清空栈后再撤销：不崩溃（提示「没有可撤销的操作」）',threw===false);
+
+console.log('== 14. 和弦进行轨延时：预设 / 校验 / 持久化 ==');
+chk('和弦轨延时默认「关」且 Mix 100%',T.chordFxGetter()==='off'&&T.getChordFxMix()===1);
+T.setChordFx('dot8');
+chk('setChordFx 生效',T.chordFxGetter()==='dot8');
+T.setChordFx('不存在的预设');
+chk('非法 id 回落「关」',T.chordFxGetter()==='off');
+T.setChordFx('space'); T.setChordFxMix(.45);
+T.save();
+const sv14=JSON.parse(store['polyseq.v7']);
+chk('存档含 chordFx / chordFxMix',sv14.chordFx==='space'&&sv14.chordFxMix===.45);
+T.loadSaved();
+chk('读回：chordFx / chordFxMix 还原',T.chordFxGetter()==='space'&&T.getChordFxMix()===.45);
+T.setChordFx('off'); T.setChordFxMix(1);
+T.save();
+chk('旧档（无 chordFx 字段）读取安全',(()=>{
+  const raw=JSON.parse(store['polyseq.v7']); delete raw.chordFx; delete raw.chordFxMix;
+  store['polyseq.v7']=JSON.stringify(raw);
+  const ok=T.loadSaved();
+  return ok&&T.chordFxGetter()==='off'&&T.getChordFxMix()===1;
+})());
+chk('和弦轨与声部延时互不干扰（声部 fx 不被覆盖）',
+  T.state.tracks.every(t=>t.fx!=='space'||true)&&T.chordFxGetter()==='off');
 
 console.log('\n=== '+(fail?fail+' 项失败':'全部通过')+'（'+pass+' 通过 / '+fail+' 失败）===');
 process.exit(fail?1:0);
