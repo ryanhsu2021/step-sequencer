@@ -96,6 +96,7 @@ styleSel.addEventListener('change',()=>{
 });
 
 $('arrangeBtn').addEventListener('click',e=>{autoArrange();e.target.blur();});
+$('infBtn').addEventListener('click',e=>{toggleInfinite();e.target.blur();});
 $('clearSeqBtn').addEventListener('click',e=>{clearSeqs();e.target.blur();});
 $('clearTracksBtn').addEventListener('click',e=>{clearTracksKeep();e.target.blur();});
 

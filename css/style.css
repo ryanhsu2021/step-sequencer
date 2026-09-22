@@ -53,6 +53,14 @@ body::before{
 .btn.primary.playing{background:#f4602c;border-color:#f4602c;box-shadow:0 6px 16px rgba(244,96,44,.35)}
 .btn.accent{background:var(--ink);border-color:var(--ink);color:#fff}
 .btn.ghost{border-style:dashed}
+/* ♾ 无限演化：激活态青绿色常亮 + 每次演化时按钮心跳一下 */
+.btn.inf-on{background:#0e7c66;border-color:#0e7c66;color:#fff;box-shadow:0 4px 12px rgba(14,124,102,.3)}
+.btn.inf-flash{animation:infPulse .65s ease-out 1}
+@keyframes infPulse{
+  0%{box-shadow:0 0 0 0 rgba(14,124,102,.55);transform:scale(1)}
+  35%{box-shadow:0 0 0 8px rgba(14,124,102,0);transform:scale(1.06)}
+  100%{box-shadow:0 4px 12px rgba(14,124,102,.3);transform:scale(1)}
+}
 select{
   font:inherit;font-size:12px;font-weight:600;color:#141414;background-color:rgba(255,255,255,.88);
   border:1.5px solid rgba(20,20,20,.16);border-radius:999px;padding:5px 24px 5px 10px;outline:none;cursor:pointer;transition:.14s;

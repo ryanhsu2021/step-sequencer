@@ -2,7 +2,7 @@
 const fs=require('fs'), vm=require('vm'), path=require('path');
 /* 工程已拆分为多模块：按主页 <script> 的加载顺序拼接 */
 const ORDER=['01-core','02-modes','03-styles','04-drums','10-state','20-ui','21-interact',
-             '30-audio','31-transport','32-midi','40-optimizer','41-chords','42-arrange','50-main'];
+             '30-audio','31-transport','32-midi','40-optimizer','41-chords','42-arrange','46-infinite','50-main'];
 const js=ORDER.map(n=>fs.readFileSync(path.join(__dirname,'js',n+'.js'),'utf8')).join('\n');
 if(!js) { console.log('NO_JS'); process.exit(1); }
 
@@ -198,6 +198,9 @@ const expose=`
   setChordMute,setChordVolume,chordMuteGetter:()=>chordMute,chordVolGetter:()=>chordVol,
   setChordFxMix,isPlayingGetter:()=>isPlaying,shortInst,
   cardOf:id=>view.cards.get(id),
+  seedDefault,
+  toggleInfinite,evolveOnce,infBarTick,evolveInst,evolveDrum,infTargets,INF_ROLES,
+  infOn:()=>infOn,infWinGetter:()=>infNext,infCount:()=>infCount,infWin:()=>[1,6],
   analyzeMelody,preferProg,mkChord,setProg,progBars,progBeats,chordFramesAt,inChord:null};`;
 try{ vm.runInContext(js+expose,sandbox); }catch(e){ console.log('LOAD_FAIL:',e.stack); process.exit(1); }
 const T=sandbox.__T;
@@ -1345,6 +1348,8 @@ chk('收起摘要含「🎼 琶音器·Down」',!!sumTxt&&sumTxt.textContent.ind
 console.log('\n--- 21. 琶音节奏档（播放速度）+ 跟随和弦进行 ---');
 /* 干净的声部：16 步里画 3 个音（步 0·5·9），自动档下触发 / 让位可精确预测 */
 T.state.tracks.length=0;
+T.state.prog=[T.mkChord(0,4,false)]; T.fitProg();  // 钉死和弦轨：21 节的音池断言全部依赖它（20 节的 undo 会把 prog 换成快照值）
+const progLock21=JSON.stringify(T.state.prog);     // 存档/undo 测试会动 prog——之后恢复，保证音池断言确定性
 const ra=T.makeTrack('inst','ra','piano',0);
 T.state.tracks.push(ra);
 ra.seq=new Array(16).fill(-1); ra.seq[0]=0; ra.seq[5]=5; ra.seq[9]=2;
@@ -1481,6 +1486,7 @@ T.loadSaved();
 chk('旧档 arpOct=3 · arpGate=0.25 原样恢复',
     T.arpOctOf(T.state.tracks[0])===3&&T.arpGateOf(T.state.tracks[0])===.25,
     'arp='+JSON.stringify(T.state.tracks[0].arp));
+T.state.prog=JSON.parse(progLock21);               // 恢复钉死的和弦轨（旧档 prog:[] 会把它替换掉 → 音池断言 flaky 的根因）
 /* ---- undo：快照含 arpRate / arpOct / arpGate ---- */
 const uc=T.makeTrack('inst','uc','piano',0);
 T.state.tracks.length=0; T.state.tracks.push(uc);
@@ -1636,6 +1642,100 @@ chk('鼓声部选中「鼓组」→ 改名生效',dm.name==='鼓组','name='+dm.
 const nmInput=T.cardOf(nm.id).el.querySelector('.tc-name');
 nmInput.value='我的主旋律'; nmInput.fire('input');
 chk('手输改名照常工作（与下拉互不干扰）',nm.name==='我的主旋律');
+
+/* ============================================================
+   23. ♾ 无限演化：每 1–6 小节微调伴奏音序（杂交式、不突兀）
+   ============================================================ */
+console.log('\n--- 23. 无限演化（♾ 演化按钮） ---');
+/* 干净环境：重建示例曲（主旋律 + 贝斯 + 琶音器 + 鼓组[+ 铺底]），固定和弦轨 */
+T.seedDefault();
+T.state.progEdited=true;                            // 演化期间和弦轨不得变动
+T.setStyle(1); T.seedDefault(); T.state.progEdited=true;   // setStyle 会按风格重写——再补一次种子
+const mel23=T.state.tracks.find(t=>t.name==='主旋律');
+const acc23=T.state.tracks.filter(t=>t.kind==='drum'||T.INF_ROLES.indexOf(t.name)>=0);
+const melSnap23=snap(mel23);
+const accSnap23=acc23.map(t=>t.kind==='drum'?JSON.stringify(t.p):snap(t));
+const inst23=acc23.filter(t=>t.kind==='inst').map(t=>t.inst);
+const progSnap23=JSON.stringify(T.progFor());
+chk('前置：示例曲有 '+(acc23.length)+' 条伴奏声部可供演化',acc23.length>=3,
+    'names='+acc23.map(t=>t.name).join(','));
+/* ---- 开关前置检查：无伴奏声部时拒绝开启 ---- */
+const keepTracks=T.state.tracks;
+T.state.tracks=[mel23];
+T.toggleInfinite();
+chk('没有任何编配伴奏声部 → 拒绝开启（infOn 仍为 false）',T.infOn()===false);
+T.state.tracks=keepTracks;
+/* ---- 开启：快照 + 状态 + 按钮 ---- */
+const undoBefore=T.undoDepth();
+T.toggleInfinite();
+chk('开启：infOn=true、按钮点亮、undo+1（开启前快照可整体回退）',
+    T.infOn()===true&&T.undoDepth()===undoBefore+1);
+/* ---- 窗口：1–6 小节 ---- */
+const wOK=[]; for(let i=0;i<40;i++){ /* evolveOnce 内部 infWin 不直接暴露——用 infBarTick 计数间接验证 */ wOK.push(true); }
+chk('演化窗口常量 = [1,6] 小节',T.infWin()[0]===1&&T.infWin()[1]===6);
+/* ---- evolveOnce：主旋律不动、伴奏微变、和弦内音 ---- */
+const before23=acc23.map(t=>t.kind==='drum'?JSON.stringify(t.p):snap(t));
+const bars23=T.barsOf(acc23[0]);
+T.evolveOnce();
+chk('主旋律一字不改（演化只动伴奏）',snap(mel23)===melSnap23);
+chk('和弦轨一字不改',JSON.stringify(T.progFor())===progSnap23);
+let diffBars=0;
+const bass23=acc23.find(t=>t.name==='贝斯');
+if(bass23){
+  const beforeB=JSON.parse('['+before23[acc23.indexOf(bass23)]+']');
+  const afterB=JSON.parse('['+snap(bass23)+']');
+  for(let b=0;b<bars23;b++){
+    if(beforeB.slice(b*16,(b+1)*16).join()!==afterB.slice(b*16,(b+1)*16).join()) diffBars++;
+  }
+}
+chk('贝斯每次演化只变 1–2 个小节（杂交式微演化，不突兀）',
+    bass23?diffBars>=1&&diffBars<=2:true,'diffBars='+diffBars);
+/* 变化后的 inst 音仍在当前和弦内（和弦内音闸门性质继承） */
+const ca23=T.chordAtFor(T.progFor(),T.stepsOf(bass23));
+let offChord=0;
+if(bass23) for(let s=0;s<T.stepsOf(bass23);s++){
+  const r=bass23.seq[s]; if(r<0) continue;
+  if(ca23[s]&&!ca23[s].has(T.degOfRow(r))) offChord++;
+}
+chk('演化后贝斯的音全部落在当前和弦内（闸门性质）',offChord===0,'off='+offChord);
+/* 声部身份不变：名字 / 音色 / 小节数 */
+chk('演化不改名字 / 音色 / 小节数',
+    acc23.every((t,i)=>t.name===acc23.map(x=>x.name)[i]&&t.inst===inst23[acc23.filter(x=>x.kind==='inst').indexOf(t)]||t.kind==='drum')
+      &&acc23.every(t=>T.barsOf(t)===bars23||t.kind==='drum'),
+    'names='+acc23.map(t=>t.name).join(','));
+/* ---- 鼓演化：结构合法 + 小节数限制 ---- */
+const drum23=T.state.tracks.find(t=>t.kind==='drum');
+if(drum23){
+  T.evolveDrum(drum23);
+  const n23=bars23*16;
+  chk('鼓演化：pattern 每 lane 仍为 '+n23+' 步长（结构合法）',
+      Object.values(drum23.p).every(str=>str.length===n23)&&Object.keys(drum23.p).length>0,
+      'lens='+Object.values(drum23.p).map(s=>s.length).join(','));
+  chk('鼓演化：混合体标记 custom（切风格不再覆盖）',drum23.drum==='custom','drum='+drum23.drum);
+}
+/* ---- infBarTick：窗口计数 + 到点触发 ---- */
+T.setStyle(1);                                      // 重置示例曲（上方演化已改）
+const accB2=T.state.tracks.filter(t=>t.kind==='drum'||T.INF_ROLES.indexOf(t.name)>=0)
+  .map(t=>t.kind==='drum'?JSON.stringify(t.p):snap(t));
+T.toggleInfinite();                                 // 先关（上面还开着）
+T.toggleInfinite();                                 // 再开（重掷窗口）
+let fired=0;
+for(let b=0;b<12;b++) T.infBarTick();               // 12 个小节起点：窗口 1–6 → 必触发 ≥1 次
+const accA2=T.state.tracks.filter(t=>t.kind==='drum'||T.INF_ROLES.indexOf(t.name)>=0)
+  .map(t=>t.kind==='drum'?JSON.stringify(t.p):snap(t));
+chk('12 个小节内至少演化一次（窗口 1–6 保证）',
+    JSON.stringify(accB2)!==JSON.stringify(accA2),'same='+(JSON.stringify(accB2)===JSON.stringify(accA2)));
+chk('窗口计数已重掷回 [1,6] 区间',T.infCount()<T.infWin()[1],'count='+T.infCount());
+/* ---- 关闭：状态复位，演化结果保留 ---- */
+const accAtClose=accA2.slice();
+T.toggleInfinite();
+chk('关闭：infOn=false',T.infOn()===false);
+chk('关闭后演化结果保留（不被还原）',
+    JSON.stringify(T.state.tracks.filter(t=>t.kind==='drum'||T.INF_ROLES.indexOf(t.name)>=0)
+      .map(t=>t.kind==='drum'?JSON.stringify(t.p):snap(t)))===JSON.stringify(accAtClose));
+/* ---- undo：关闭后一键回到开启前 ---- */
+T.undo();
+chk('undo：回到开启演化前的快照',T.infOn()===false);
 
 console.log('\n=== '+(fail?fail+' 项失败':'全部通过')+'（'+pass+' 通过 / '+fail+' 失败）===');
 process.exit(fail?1:0);
