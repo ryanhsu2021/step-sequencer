@@ -339,8 +339,8 @@ input[type=range]:hover::-webkit-slider-thumb{transform:scale(1.15)}
   box-shadow:0 2px 7px color-mix(in srgb,var(--tcd) 50%,rgba(0,0,0,.25));
 }
 .sqcell.on.anchor{box-shadow:0 2px 7px color-mix(in srgb,var(--tcd) 50%,rgba(0,0,0,.25)),0 0 0 1.5px rgba(255,255,255,.75)}
-/* 琶音自动节奏档（1/16·1/8·1/4）：本步不触发的已画音符「让位变暗」——双类特异性压过 .sqcell.on，无需 !important */
-.sqcell.on.paintmute{opacity:.18;filter:grayscale(.6)}
+/* 琶音音长：被上一个音延音覆盖的格子——半透明延长底纹（起音格仍是实心，幽灵标记优先） */
+.sqcell.hold{background:color-mix(in srgb,var(--tcd) 24%,rgba(255,255,255,.45));box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--tcd) 30%,transparent)}
 /* 跟随和弦：音序格不动，在「实际发声行」画一枚虚框淡标记（一眼看出被折算到哪去了） */
 .sqcell.ghost{
   background:transparent;
