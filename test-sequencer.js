@@ -181,6 +181,7 @@ const expose=`
   rateOf,rateName,spanOf,setRate,loopSteps,RATE_VALUES,
   toggleOpen,toggleFollow,isFollowing,applyFollow,syncFollowers,openId:()=>openTrackId,followOf:t=>!!t.follow,
   toggleArp,setArpMode,setArpRate,arpRow,arpPoolAt,arpHitIdx,arpOn,arpFires,arpLenOf,
+  noteDurOf,bpmGetter:()=>bpm,
   ARP_MODE_NAME,ARP_RATE_NAME,ARP_RATE_SHORT,ARP_LEN_LABEL,ARP_RATES,
   setMode:v=>{modeIdx=v;},
   renderTracks,chordTones,followRow,playMidiOf,
@@ -1355,6 +1356,18 @@ T.setArpRate(ra,8);
 chk('setArpRate：非法值回落 1 格',ra.arp.rate===1&&T.arpLenOf(ra)===1);
 T.setArpRate(ra,0);
 chk('setArpRate：0（旧「跟画」档位）回落 1 格',ra.arp.rate===1&&T.arpLenOf(ra)===1);
+/* 发音时值 noteDurOf：音长档真实落进发声时长（1/16 短音 ↔ 1/4 长音）*/
+const sd=T.bpmGetter?60/T.bpmGetter()/4:null;      // stepDur = 60/bpm/4
+chk('noteDurOf：音长 1 格 = 1.9 × stepDur（1/16 短音）',
+    Math.abs(T.noteDurOf(ra)-sd*1.9)<1e-9,'dur='+T.noteDurOf(ra)+' expect='+(sd*1.9));
+T.setArpRate(ra,2);
+chk('noteDurOf：音长 2 格翻倍（1/8）',Math.abs(T.noteDurOf(ra)-sd*1.9*2)<1e-9);
+T.setArpRate(ra,4);
+chk('noteDurOf：音长 4 格 ×4（1/4）',Math.abs(T.noteDurOf(ra)-sd*1.9*4)<1e-9);
+const nonArp=T.state.tracks.find(t=>t.kind==='inst'&&!(t.arp&&t.arp.on));
+chk('noteDurOf：非琶音声部不受音长档影响（自然衰减不截）',
+    nonArp?Math.abs(T.noteDurOf(nonArp)-sd*1.9*T.rateOf(nonArp))<1e-9:true);
+T.setArpRate(ra,1);
 /* 音长与发声位置解耦：1/4 时空步依然静默 */
 T.setArpRate(ra,4);
 chk('音长 4 格时空步仍不发声（位置与音长解耦）',

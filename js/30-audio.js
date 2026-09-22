@@ -85,7 +85,7 @@ function applyReverb(){
   if(p.id!==revBuilt){ revConv.buffer=p.decay?makeIR(p):null; revBuilt=p.id; }
   const t=audioCtx.currentTime;
   revPre.delayTime.setTargetAtTime(p.pre||0,t,.05);
-  revWet.gain.setTargetAtTime(Math.min(1,p.wet*(revMix==null?1:revMix)),t,.05);
+  revWet.gain.setTargetAtTime(Math.min(1,(p.wet||0)*(revMix==null?1:revMix)),t,.05);
 }
 function setReverb(id){ revPreset=REV_IDS.has(id)?id:'off'; applyReverb(); }
 
@@ -441,13 +441,28 @@ const VOICE={
     o.connect(g); g.connect(dest); o.start(t); o.stop(t+dur*1.3);
   },
 };
+function noteDurOf(tr){
+  return stepDur()*rateOf(tr)*1.9*(arpOn(tr)?arpLenOf(tr):1);   // 发音长度随声部速度缩放；琶音声部再乘「音长」档（1/2/4 格）
+}
 function playTrackNote(tr,row,t,vel){
   ensureAudio();
   const dest=busFor(tr); if(!dest) return;
   const freq=440*Math.pow(2,(rowMidi(row,tr.oct)-69)/12);
   /* 手动力度优先；未手动调过的步保留 ±随机人性化 */
   const v=(vel==null?.82+Math.random()*.16:vel*(.94+Math.random()*.12));
-  (VOICE[tr.inst]||VOICE.piano)(freq,t,dest,v,stepDur()*rateOf(tr)*1.9*(arpOn(tr)?arpLenOf(tr):1));   // 发音长度随声部速度缩放；琶音声部再乘「音长」档（1/2/4 格）
+  const dur=noteDurOf(tr);
+  /* 琶音声部加「音门」：拨弦/钢琴/钟琴等衰减型音色的内部包络写死、不认 dur，
+     在输出端 gain 于音符终点收掉，音长档才有听感（1/16 短促截音 ↔ 1/4 近自然延音）。
+     非琶音声部保持自然衰减，音色不受影响。 */
+  let out=dest;
+  if(arpOn(tr)){
+    const gate=audioCtx.createGain();
+    gate.gain.setValueAtTime(1,t);
+    gate.gain.setTargetAtTime(.0001,t+dur*.88,Math.max(.02,dur*.06));
+    gate.connect(dest);
+    out=gate;
+  }
+  (VOICE[tr.inst]||VOICE.piano)(freq,t,out,v,dur);
   sendMidiNote(tr,row,t,vel);
 }
 /* ============ 鼓机合成 ============ */
