@@ -13,7 +13,7 @@ function makeTrack(kind,name,inst,oct){
     id:++tid, kind:kind||'inst', name:name||('声部 '+tid),
     inst:inst||'piano', oct:oct||0, bars:1, rate:1, open:true,
     seq:[], last:[], userSeq:null, vel:null, follow:false,
-    arp:{on:false,mode:'up',rate:1},                   // 琶音模式（非破坏性：发声位置只跟画的 step，音高实时取自和弦；rate＝音长 1/2/4 格。见 41-chords）
+    arp:{on:false,mode:'up',rate:0},                   // 琶音模式（非破坏性；rate＝节奏档 0 跟画 / 1·2·4 每格·每2格·每4格。见 41-chords）
     vol:.85, pan:0, mute:false, solo:false, fx:'off', fxMix:1,
     color:TRACK_COLORS[0], p:{},
   };
@@ -160,7 +160,7 @@ function save(){
         openTrackId:openTrackId==null?null:openTrackId,
         tracks:state.tracks.map(t=>({kind:t.kind,name:t.name,inst:t.inst,oct:t.oct,bars:barsOf(t),rate:rateOf(t),seq:t.seq,
           open:t.open!==false,follow:!!t.follow,
-          arpOn:arpOn(t),arpMode:(t.arp&&t.arp.mode)||'up',arpRate:arpLenOf(t),
+          arpOn:arpOn(t),arpMode:(t.arp&&t.arp.mode)||'up',arpRate:(t.arp&&t.arp.rate)|0,
           useq:(t.kind==='inst'&&Array.isArray(t.userSeq))?t.userSeq:null,
           vel:(t.kind==='inst'&&Array.isArray(t.vel))?t.vel:null,
           vol:t.vol,pan:t.pan,mute:t.mute,solo:t.solo,fx:t.fx||'off',fxMix:t.fxMix==null?1:t.fxMix,drum:t.drum,p:t.p}))
@@ -209,7 +209,7 @@ function loadSaved(){
         open:o.open!==false,
         follow:(o.kind==='inst')&&!!o.follow,
         arp:{on:(o.kind==='inst')&&!!o.arpOn,mode:ARP_MODE_IDS.indexOf(o.arpMode)>=0?o.arpMode:'up',
-             rate:ARP_RATES.indexOf(o.arpRate|0)>=0?(o.arpRate|0):1},
+             rate:ARP_RATES.indexOf(o.arpRate|0)>=0?(o.arpRate|0):0},
         vol:o.vol==null?.85:o.vol,
         pan:o.pan||0,mute:!!o.mute,solo:!!o.solo,fx:DELAY_IDS.has(o.fx)?o.fx:'off',
         fxMix:(typeof o.fxMix==='number'&&o.fxMix>=0&&o.fxMix<=1)?o.fxMix:1,drum:o.drum||'pop',
@@ -238,7 +238,7 @@ function snapState(){
   return JSON.stringify({
     tracks:state.tracks.map(t=>({id:t.id,kind:t.kind,name:t.name,inst:t.inst,oct:t.oct,bars:barsOf(t),rate:rateOf(t),
       open:t.open!==false,follow:!!t.follow,
-      arpOn:arpOn(t),arpMode:(t.arp&&t.arp.mode)||'up',arpRate:arpLenOf(t),
+      arpOn:arpOn(t),arpMode:(t.arp&&t.arp.mode)||'up',arpRate:(t.arp&&t.arp.rate)|0,
       seq:t.seq,useq:(t.kind==='inst'&&Array.isArray(t.userSeq))?t.userSeq:null,
       vel:(t.kind==='inst'&&Array.isArray(t.vel))?t.vel:null,
       vol:t.vol,pan:t.pan,mute:t.mute,solo:t.solo,fx:t.fx,fxMix:t.fxMix,drum:t.drum,p:t.p})),
@@ -270,7 +270,7 @@ function undo(){
         rate:(RATE_VALUES.indexOf(o.rate|0)>=0?o.rate|0:1),
         open:o.open!==false,follow:(o.kind==='inst')&&!!o.follow,
         arp:{on:(o.kind==='inst')&&!!o.arpOn,mode:ARP_MODE_IDS.indexOf(o.arpMode)>=0?o.arpMode:'up',
-             rate:ARP_RATES.indexOf(o.arpRate|0)>=0?(o.arpRate|0):1},
+             rate:ARP_RATES.indexOf(o.arpRate|0)>=0?(o.arpRate|0):0},
         vol:o.vol==null?.85:o.vol,pan:o.pan||0,mute:!!o.mute,solo:!!o.solo,
         fx:DELAY_IDS.has(o.fx)?o.fx:'off',fxMix:o.fxMix==null?1:o.fxMix,drum:o.drum||'pop',
         p:(o.kind==='drum'&&o.p)?patForBars(o.p,bars):t.p});

@@ -442,7 +442,7 @@ const VOICE={
   },
 };
 function noteDurOf(tr){
-  return stepDur()*rateOf(tr)*1.9*(arpOn(tr)?arpLenOf(tr):1);   // 发音长度随声部速度缩放；琶音声部再乘「音长」档（1/2/4 格）
+  return stepDur()*rateOf(tr)*1.9;   // 每个音 1 格长（随声部速度缩放）；琶音节奏档只改密度，不改单音时长
 }
 function playTrackNote(tr,row,t,vel){
   ensureAudio();
@@ -452,7 +452,7 @@ function playTrackNote(tr,row,t,vel){
   const v=(vel==null?.82+Math.random()*.16:vel*(.94+Math.random()*.12));
   const dur=noteDurOf(tr);
   /* 琶音声部加「音门」：拨弦/钢琴/钟琴等衰减型音色的内部包络写死、不认 dur，
-     在输出端 gain 于音符终点收掉，音长档才有听感（1/16 短促截音 ↔ 1/4 近自然延音）。
+     在输出端 gain 于音符终点收掉——自动滚的琶音才是清晰的颗粒（1/16 密集滚奏不糊成一片）。
      非琶音声部保持自然衰减，音色不受影响。 */
   let out=dest;
   if(arpOn(tr)){

@@ -180,9 +180,9 @@ const expose=`
   planToChords,setProgPlan,progKeyOf,planRoman,modeIdx:()=>modeIdx,PLAN_LIB,PROG_PLANS,STYLE,ROMAN,
   rateOf,rateName,spanOf,setRate,loopSteps,RATE_VALUES,
   toggleOpen,toggleFollow,isFollowing,applyFollow,syncFollowers,openId:()=>openTrackId,followOf:t=>!!t.follow,
-  toggleArp,setArpMode,setArpRate,arpRow,arpPoolAt,arpHitIdx,arpOn,arpFires,arpLenOf,
+  toggleArp,setArpMode,setArpRate,arpRow,arpPoolAt,arpHitIdx,arpOn,arpFires,
   noteDurOf,bpmGetter:()=>bpm,
-  ARP_MODE_NAME,ARP_RATE_NAME,ARP_RATE_SHORT,ARP_LEN_LABEL,ARP_RATES,
+  ARP_MODE_NAME,ARP_RATE_NAME,ARP_RATE_SHORT,ARP_RATES,
   setMode:v=>{modeIdx=v;},
   renderTracks,chordTones,followRow,playMidiOf,
   renderMixer,mixerCard:()=>$('mixerCard'),setTrackVol,setTrackPan,setTrackMute,setTrackSolo,setTrackDelay,setTrackFxMix,
@@ -1331,63 +1331,67 @@ chk('收起摘要含「🎼 琶音·下行」',!!sumTxt&&sumTxt.textContent.inde
     'sum='+(sumTxt&&sumTxt.textContent));
 
 /* ============================================================
-   21. 琶音：只在画的 step 发声（空步不响）+ 音长档（1/16 · 1/8 · 1/4）
+   21. 琶音节奏档（跟画 / 1/16 · 1/8 · 1/4 自动滚）+ 琶音跟随和弦进行
    ============================================================ */
-console.log('\n--- 21. 琶音只在画的 step 发声 + 音长档 ---');
-/* 干净的声部：16 步里画 3 个音（步 0·5·9）——发声位置只认这三格 */
+console.log('\n--- 21. 琶音节奏档（播放速度）+ 跟随和弦进行 ---');
+/* 干净的声部：16 步里画 3 个音（步 0·5·9），自动档下触发 / 让位可精确预测 */
 T.state.tracks.length=0;
 const ra=T.makeTrack('inst','ra','piano',0);
 T.state.tracks.push(ra);
 ra.seq=new Array(16).fill(-1); ra.seq[0]=0; ra.seq[5]=5; ra.seq[9]=2;
-ra.arp={on:true,mode:'up',rate:1};
+ra.arp={on:true,mode:'up',rate:0};
 const rSeq21=ra.seq.slice();                       // 非破坏性基线
-/* 发声位置：只在你画的 step 上（空步永不发声，与音长档无关） */
-chk('arpFires：只认画的 step（空步不响）',
-    T.arpFires(ra,0)===true&&T.arpFires(ra,1)===false&&T.arpFires(ra,5)===true&&T.arpFires(ra,9)===true);
-chk('followRow：空步返回 -1、画的步发声',
+/* 跟画档（默认 rate=0）：画了才响，空步静默 */
+chk('跟画档：arpFires 跟随画的音符',
+    ra.arp.rate===0&&T.arpFires(ra,0)===true&&T.arpFires(ra,1)===false&&T.arpFires(ra,5)===true);
+chk('跟画档：followRow 空步返回 -1、画步发声',
     T.followRow(ra,1)===-1&&T.followRow(ra,6)===-1&&T.followRow(ra,0)>=0&&T.followRow(ra,5)>=0);
-/* 音长档：1 / 2 / 4 格（1/16 · 1/8 · 1/4），默认 1 */
-chk('默认音长 = 1 格（1/16 短音）',T.arpLenOf(ra)===1,'len='+T.arpLenOf(ra));
+/* 1/8 档（每 2 格一音）：偶数格全响（画没画都响），奇数格让位 */
 T.setArpRate(ra,2);
-chk('setArpRate：音长 2 格（1/8）',ra.arp.rate===2&&T.arpLenOf(ra)===2);
+chk('setArpRate：档位写入 tr.arp.rate',ra.arp.rate===2);
+chk('1/8 档：偶数格全响（含没画的格）',
+    [0,2,4,6,8,10,12,14].every(s=>T.arpFires(ra,s)===true));
+chk('1/8 档：奇数格不触发（让位）',
+    [1,3,5,7,9,11,13,15].every(s=>T.arpFires(ra,s)===false));
+chk('1/8 档：followRow 奇数格 -1、偶数格发声',
+    T.followRow(ra,1)===-1&&T.followRow(ra,9)===-1&&T.followRow(ra,2)>=0&&T.followRow(ra,4)>=0);
+chk('1/8 档：图案序号等差直算 ceil(s/r)',
+    T.arpHitIdx(ra,0)===0&&T.arpHitIdx(ra,2)===1&&T.arpHitIdx(ra,4)===2&&T.arpHitIdx(ra,6)===3);
+/* 1/4 档（每 4 格一音） */
 T.setArpRate(ra,4);
-chk('setArpRate：音长 4 格（1/4）',ra.arp.rate===4&&T.arpLenOf(ra)===4);
+chk('1/4 档：s%4===0 触发、其余静默',
+    T.arpFires(ra,0)===true&&T.arpFires(ra,4)===true&&T.arpFires(ra,8)===true
+      &&T.arpFires(ra,2)===false&&T.arpFires(ra,9)===false);
+chk('1/4 档：图案序号 ceil(s/4)',T.arpHitIdx(ra,8)===2);
+/* 1/16 档（每格一音）：16 步全触发 */
+T.setArpRate(ra,1);
+chk('1/16 档：16 步全部触发',Array.from({length:16},(_,s)=>s).every(s=>T.arpFires(ra,s)===true));
+/* 非法档回落 0（跟画） */
 T.setArpRate(ra,8);
-chk('setArpRate：非法值回落 1 格',ra.arp.rate===1&&T.arpLenOf(ra)===1);
-T.setArpRate(ra,0);
-chk('setArpRate：0（旧「跟画」档位）回落 1 格',ra.arp.rate===1&&T.arpLenOf(ra)===1);
-/* 发音时值 noteDurOf：音长档真实落进发声时长（1/16 短音 ↔ 1/4 长音）*/
+chk('setArpRate：非法值回落 0（跟画）',ra.arp.rate===0);
+/* 发音时值 noteDurOf：节奏档只改密度，单音时长恒为 1 格 */
 const sd=T.bpmGetter?60/T.bpmGetter()/4:null;      // stepDur = 60/bpm/4
-chk('noteDurOf：音长 1 格 = 1.9 × stepDur（1/16 短音）',
-    Math.abs(T.noteDurOf(ra)-sd*1.9)<1e-9,'dur='+T.noteDurOf(ra)+' expect='+(sd*1.9));
-T.setArpRate(ra,2);
-chk('noteDurOf：音长 2 格翻倍（1/8）',Math.abs(T.noteDurOf(ra)-sd*1.9*2)<1e-9);
+chk('noteDurOf：单音时长恒为 1.9 × stepDur × 声部速度（节奏档不改音长）',
+    Math.abs(T.noteDurOf(ra)-sd*1.9*T.rateOf(ra))<1e-9,'dur='+T.noteDurOf(ra));
 T.setArpRate(ra,4);
-chk('noteDurOf：音长 4 格 ×4（1/4）',Math.abs(T.noteDurOf(ra)-sd*1.9*4)<1e-9);
+chk('noteDurOf：1/4 自动档下单音时长不变（密度≠音长）',
+    Math.abs(T.noteDurOf(ra)-sd*1.9*T.rateOf(ra))<1e-9);
 const nonArp=T.state.tracks.find(t=>t.kind==='inst'&&!(t.arp&&t.arp.on));
-chk('noteDurOf：非琶音声部不受音长档影响（自然衰减不截）',
+chk('noteDurOf：非琶音声部同式（自然衰减由音色自己决定）',
     nonArp?Math.abs(T.noteDurOf(nonArp)-sd*1.9*T.rateOf(nonArp))<1e-9:true);
 T.setArpRate(ra,1);
-/* 音长与发声位置解耦：1/4 时空步依然静默 */
-T.setArpRate(ra,4);
-chk('音长 4 格时空步仍不发声（位置与音长解耦）',
-    T.arpFires(ra,1)===false&&T.arpFires(ra,2)===false&&T.arpFires(ra,6)===false&&T.arpFires(ra,10)===false);
-chk('图案序号与音长解耦（arpHitIdx 只数画的音）',
-    T.arpHitIdx(ra,0)===0&&T.arpHitIdx(ra,5)===1&&T.arpHitIdx(ra,9)===2);
-/* 非破坏性：整轮切换音长 tr.seq 一字不改 */
-chk('音长切换全程 tr.seq 一字不改（非破坏性）',String(ra.seq)===String(rSeq21));
-/* 网格：延音标记只出现在「起音的实际发声行」上；音长 1 格时不起标记 */
-T.setArpRate(ra,1); T.renderTracks();
-const lowRow1=T.followRow(ra,0);                   // 步 0 的实际发声行
-const cells1=T.cardOf(ra.id).cells;
-chk('网格：音长 1 格时没有任何延音格',
-    !!cells1&&cells1.every(col=>!col||col.every(c=>!c||!c.classList.contains('hold'))));
-T.setArpRate(ra,4); T.renderTracks();
-const cells4=T.cardOf(ra.id).cells;
-chk('网格：1/4 音长在发声行上标出 +1·+2·+3 延音格',
-    !!cells4&&cells4[1][lowRow1].classList.contains('hold')&&cells4[2][lowRow1].classList.contains('hold')
-      &&cells4[3][lowRow1].classList.contains('hold')&&!cells4[4][lowRow1].classList.contains('hold'),
-    'row='+lowRow1+' c1='+(cells4&&cells4[1]&&cells4[1][lowRow1]&&cells4[1][lowRow1].className));
+/* 非破坏性：整轮节奏切换 tr.seq 一字不改 */
+chk('节奏档切换全程 tr.seq 一字不改（非破坏性）',String(ra.seq)===String(rSeq21));
+/* 网格：自动档空格画幽灵（实际发声行）、不触发的画格让位变暗 */
+T.setArpRate(ra,2); T.renderTracks();
+const c21=T.cardOf(ra.id).cells;
+chk('网格：不触发的画格 paintmute（让位，原样保留）',
+    !!c21&&c21[5]&&c21[5][5]&&c21[5][5].classList.contains('paintmute')
+      &&c21[9]&&c21[9][2]&&c21[9][2].classList.contains('paintmute'));
+chk('网格：没画但按拍触发的空格画出幽灵（实际发声行）',
+    !!c21&&!!c21[2]&&c21[2].some(c=>c&&c.classList.contains('ghost')));
+chk('网格：正常触发的画格不变暗（步 0 偶数格触发）',
+    !!c21&&!!c21[0]&&!!c21[0][0]&&!c21[0][0].classList.contains('paintmute'));
 /* ---- 琶音跟随和弦进行：改和弦 → 音池与实际发声音高实时跟着变 ---- */
 T.setMode(0);                                      // 固定七声调式（大调）：断言可精确预测
 T.setArpRate(ra,1);                                // 1/16：步 0 必触发；模式 up、k=0 → 音池最低音
@@ -1411,17 +1415,23 @@ const raw21=JSON.parse(localStorage.getItem('polyseq.v7')||'{}');
 chk('存档含 arpRate=2',
     !!(raw21.tracks&&raw21.tracks[0])&&raw21.tracks[0].arpRate===2,
     'arpRate='+(raw21.tracks&&raw21.tracks[0]?raw21.tracks[0].arpRate:'无'));
-/* ---- 旧档（无 arpRate 字段）：安全回落 1（1/16 短音） ---- */
+/* ---- 旧档（无 arpRate 字段）：安全回落 0（跟画） ---- */
 store['polyseq.v7']=JSON.stringify({tracks:[{id:1,kind:'inst',name:'旧',inst:'piano',oct:0,bars:1,rate:1,seq:[-1],vol:.85,pan:0,mute:false,solo:false,fx:'off',fxMix:1,p:{}}],prog:[],progEdited:false,progBars:1});
 T.loadSaved();
 const la21=T.state.tracks[0];
-chk('旧档读取：arpRate 安全回落 1（1/16 短音）',
-    la21.arp&&la21.arp.rate===1&&la21.arp.on===false,'arp='+JSON.stringify(la21.arp));
-/* ---- 上一版「跟画」档位（arpRate=0）迁移到 1 ---- */
+chk('旧档读取：arpRate 安全回落 0（跟画）',
+    la21.arp&&la21.arp.rate===0&&la21.arp.on===false,'arp='+JSON.stringify(la21.arp));
+/* ---- (C) 版旧档 arpRate=0（跟画）+ 开关开 → 原语义原样保留 ---- */
 store['polyseq.v7']=JSON.stringify({tracks:[{id:1,kind:'inst',name:'旧0',inst:'piano',oct:0,bars:1,rate:1,seq:[0],arpOn:true,arpMode:'up',arpRate:0,vol:.85,pan:0,mute:false,solo:false,fx:'off',fxMix:1,p:{}}],prog:[],progEdited:false,progBars:1});
 T.loadSaved();
-chk('旧档 arpRate=0（旧「跟画」档）迁到 1 且琶音开关保留',
-    T.state.tracks[0].arp.rate===1&&T.arpLenOf(T.state.tracks[0])===1&&T.arpOn(T.state.tracks[0])===true,
+chk('旧档 arpRate=0 → 保持跟画、开关保留',
+    T.state.tracks[0].arp.rate===0&&T.arpOn(T.state.tracks[0])===true,
+    'arp='+JSON.stringify(T.state.tracks[0].arp));
+/* ---- (D) 版旧档 arpRate=1/2/4（音长档）→ 值兼容，语义转为自动滚速度 ---- */
+store['polyseq.v7']=JSON.stringify({tracks:[{id:1,kind:'inst',name:'旧2',inst:'piano',oct:0,bars:1,rate:1,seq:[0],arpOn:true,arpMode:'up',arpRate:2,vol:.85,pan:0,mute:false,solo:false,fx:'off',fxMix:1,p:{}}],prog:[],progEdited:false,progBars:1});
+T.loadSaved();
+chk('旧档 arpRate=2（音长档）→ 1/8 自动滚、开关保留',
+    T.state.tracks[0].arp.rate===2&&T.arpFires(T.state.tracks[0],2)===true,
     'arp='+JSON.stringify(T.state.tracks[0].arp));
 /* ---- undo：快照含 arpRate ---- */
 const uc=T.makeTrack('inst','uc','piano',0);
@@ -1433,19 +1443,19 @@ T.setArpRate(uc,2);
 chk('setArpRate：改档生效',uc.arp.rate===2);
 T.undo();
 const ud=T.state.tracks[0];                        // undo 按快照重建声部对象：必须重取活动引用
-chk('undo：恢复 rate=4（快照含音长档）',ud.arp.rate===4&&T.arpLenOf(ud)===4,'arp='+JSON.stringify(ud.arp));
-/* ---- UI：音长下拉 ---- */
+chk('undo：恢复 rate=4（快照含节奏档）',ud.arp.rate===4,'arp='+JSON.stringify(ud.arp));
+/* ---- UI：节奏下拉 ---- */
 T.renderTracks();
 const rc21=T.cardOf(ud.id);
 const rSel=rc21&&rc21.el.querySelector('select.arp-rate');
-chk('音长下拉存在、开关开着时可用、值正确',
+chk('节奏下拉存在、开关开着时可用、值正确',
     !!rSel&&rSel.disabled===false&&rSel.value==='4','sel='+(rSel?'value='+rSel.value+' disabled='+rSel.disabled:'无'));
-chk('音长下拉只有 1/16 · 1/8 · 1/4 三档（无旧「跟画」档）',
-    !!rSel&&rSel.options.length===3&&String(rSel.options[0].value)==='1'
-      &&String(rSel.options[1].value)==='2'&&String(rSel.options[2].value)==='4',
+chk('节奏下拉共 4 档：跟画(0) / 1(1/16) / 2(1/8) / 4(1/4)',
+    !!rSel&&rSel.options.length===4&&String(rSel.options[0].value)==='0'
+      &&String(rSel.options[1].value)==='1'&&String(rSel.options[2].value)==='2'&&String(rSel.options[3].value)==='4',
     'n='+(rSel&&rSel.options.length));
 rSel.value='2'; rSel.fire('change');
-chk('下拉改音长 → tr.arp.rate 跟着变',ud.arp.rate===2,'rate='+ud.arp.rate);
+chk('下拉改节奏 → tr.arp.rate 跟着变',ud.arp.rate===2,'rate='+ud.arp.rate);
 const sumR=(T.cardOf(ud.id).el.querySelector('.tc-sum .s-sum')||{textContent:''}).textContent;
 chk('改档后摘要即时更新（含 ·1/8）',sumR.indexOf('·1/8')>=0,'sum='+sumR);
 T.setArpMode(ud,'updown');
@@ -1455,14 +1465,17 @@ chk('改图案后摘要即时更新（含 上下）',sumM.indexOf('上下')>=0,'
 T.toggleArp(ud);                                   // → 关（内部 renderTracks 重建卡片）
 const rc22=T.cardOf(ud.id);
 const rSel2=rc22&&rc22.el.querySelector('select.arp-rate');
-chk('琶音关闭 → 音长下拉禁用（值保留）',
+chk('琶音关闭 → 节奏下拉禁用（值保留）',
     !!rSel2&&rSel2.disabled===true&&rSel2.value==='2'&&ud.arp.rate===2);
-/* 摘要行：总是带音长短名「琶音·图案·音长」 */
+/* 摘要行：恒带节奏短名「琶音·图案·节奏」 */
 T.toggleArp(ud);                                   // → 再开（内部 renderTracks）
 const sum21=T.cardOf(ud.id).el.querySelector('.tc-sum .s-sum');
 chk('收起摘要含「琶音·上下·1/8」',
     !!sum21&&sum21.textContent.indexOf('琶音·上下·1/8')>=0,'sum='+(sum21&&sum21.textContent));
-/* ---- MIDI：音长写进 note off（PPQ960 · 声部速度 1/16 → 每格 240 tick） ---- */
+T.setArpRate(ud,0);
+const sumF=(T.cardOf(ud.id).el.querySelector('.tc-sum .s-sum')||{textContent:''}).textContent;
+chk('摘要：跟画档显示「·跟画」',sumF.indexOf('·跟画')>=0,'sum='+sumF);
+/* ---- MIDI：节奏档写进触发密度（PPQ960 · 声部速度 1/16 → 每格 240 tick） ---- */
 function midiSpans(u8){
   let p=0, best=null;
   while(u8&&p+8<=u8.length){
@@ -1494,22 +1507,18 @@ T.state.tracks.length=0; T.state.tracks.push(ra);  // 只导出这一个琶音�
 T.setRate(ra,1);
 /* 本节的 MIDI 只含 1 个声部（<200 字节），不能用带阈值过滤的 latestMidi —— 直接取最后一个 Blob */
 const myMidi=()=>{ const b=globalThis.__blobs||[]; const p=(b[b.length-1]||[])[0]; return p&&p.length?p:null; };
+/* 1/8 自动档：偶数格全触发（画没画都响），每音 1 格长 */
 T.setArpRate(ra,2); T.exportMidi();
-const a0=midiSpans(myMidi()).find(x=>x.on===0);
-chk('MIDI：音长 1/8 → 首音 note off 延到 2 格（480 tick）',
-    !!a0&&a0.off-a0.on===480,'span='+JSON.stringify(a0));
-T.setArpRate(ra,4); T.exportMidi();
-const b0=midiSpans(myMidi()).find(x=>x.on===0);
-chk('MIDI：音长 1/4 → 首音 note off 延到 4 格（960 tick）',!!b0&&b0.off-b0.on===960,'span='+JSON.stringify(b0));
-ra.seq[15]=1; T.exportMidi();                      // 末尾起音：note off 应 clamp 到声部末尾
-const cEnd=midiSpans(myMidi()).find(x=>x.on===15*240);
-chk('MIDI：末尾音的 note off clamp 到声部末尾（16 格 = 3840 tick）',
-    !!cEnd&&cEnd.off===16*240,'span='+JSON.stringify(cEnd));
-ra.seq[15]=-1;
-/* 空步不产生任何音符（发声位置只认画的 step） */
-T.exportMidi();                                    // 去掉末尾测试音再导一次
+const spansA=midiSpans(myMidi());
+chk('MIDI：1/8 自动档 16 步触发 8 个音（每 2 格一音）',
+    spansA.length===8&&[0,2,4,6,8,10,12,14].every((s,i)=>spansA[i]&&spansA[i].on===s*240),
+    'spans='+JSON.stringify(spansA.map(x=>[x.on,x.off])));
+chk('MIDI：每个琶音音 1 步长（note off = 240 tick）',
+    spansA.length>0&&spansA.every(x=>x.off-x.on===240),'spans='+JSON.stringify(spansA.map(x=>x.off-x.on)));
+/* 跟画档：只有画的 3 个 step 发声 */
+T.setArpRate(ra,0); T.exportMidi();
 const evCount=midiSpans(myMidi()).length;
-chk('MIDI：只有画的 3 个 step 发声，13 个空步无音符',evCount===3,'n='+evCount);
+chk('MIDI：跟画档只有画的 3 个 step 发声，空步无音符',evCount===3,'n='+evCount);
 
 console.log('\n=== '+(fail?fail+' 项失败':'全部通过')+'（'+pass+' 通过 / '+fail+' 失败）===');
 process.exit(fail?1:0);
