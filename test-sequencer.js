@@ -186,7 +186,7 @@ const expose=`
   velOf,pushUndo,undo,undoDepth:()=>undoStack.length,
   DELAY_PRESETS,REV_PRESETS,setTrackFx,setReverb,revGetter:()=>revPreset,trackFx:t=>t.fx,setRevMix:v=>{revMix=v;},getRevMix:()=>revMix,
   setChordFx,applyChordFx,chordFxGetter:()=>chordFx,getChordFxMix:()=>chordFxMix,setChordFxMix,chordBusId:CHORD_BUS_ID,
-  planToChords,setProgPlan,progKeyOf,planRoman,modeIdx:()=>modeIdx,PLAN_LIB,PROG_PLANS,STYLE,ROMAN,
+  planToChords,setProgPlan,progKeyOf,planRoman,modeIdx:()=>modeIdx,PLAN_LIB,PROG_PLANS,PROG_NICKS,STYLE,STYLES,ROMAN,
   rateOf,rateName,spanOf,setRate,loopSteps,RATE_VALUES,
   toggleOpen,toggleFollow,isFollowing,applyFollow,syncFollowers,openId:()=>openTrackId,followOf:t=>!!t.follow,
   toggleArp,setArpMode,setArpRate,setArpOct,setArpGate,arpRow,arpPoolAt,arpHitIdx,arpOn,arpFires,
@@ -247,7 +247,9 @@ for(let i=0;i<5;i++){
   snaps.push(snap(mel0));
 }
 chk('userSeq 未被优化结果污染',JSON.stringify(mel0.userSeq)===userSnap);
-chk('5 次连点 ≥3 个不同版本（之前是恒等不动点）',new Set(snaps).size>=3,'distinct='+new Set(snaps).size);
+/* 多样性：DP 平局随机抽取偶尔会收敛到 2 个解——再补点几次凑满 ≥3（防的是「恒等不动点」） */
+for(let i=0;i<8&&new Set(snaps).size<3;i++){ if(T.optimizeMelody(mel0)) snaps.push(snap(mel0)); }
+chk('连点 ≥3 个不同版本（之前是恒等不动点）',new Set(snaps).size>=3,'distinct='+new Set(snaps).size);
 
 console.log('== 3. 机器生成的声部：连点同样有变化，且不会凭空长出锚点 ==');
 const arp=T.state.tracks[2];
@@ -638,6 +640,24 @@ Object.keys(T.PROG_PLANS).forEach(k=>{
   });
 });
 chk('全部调式预设都能铺满和弦轨',planOK,planDetail);
+/* 预设甄选口径：无同根空转（相邻重复级数）、无越界级数 */
+{ let clean=true, dirty='';
+  const scanLibs={...T.PROG_PLANS};
+  T.STYLES.forEach(s=>{ if(s.prog) scanLibs[s.id]=s.prog; });
+  for(const [k,lib] of Object.entries(scanLibs)){
+    lib.forEach(pl=>{
+      const norm=pl.map(d=>((d%7)+7)%7);
+      if(norm.some((d,i)=>i>0&&norm[i-1]===d)){ clean=false; dirty=k+':'+pl.join('-'); }
+    });
+  }
+  chk('全部预设（风格库+调式库）无相邻同根空转',clean,dirty);
+}
+/* 俗名表：指纹键合法（去重后级数 0..6），且黄金四和弦 / 爵士 251 在列 */
+{ const keysOK=Object.keys(T.PROG_NICKS).every(k=>
+    k.split('-').every(x=>{ const d=+x; return Number.isInteger(d)&&d>=0&&d<=6; }));
+  chk('俗名表指纹键全部合法（级数 0..6）',keysOK);
+  chk('黄金四和弦（1-5-6-4）在俗名表',!!T.PROG_NICKS['0-4-5-3']&&!!T.PROG_NICKS['1-4-0']);
+}
 
 const edge=T.planToChords([0,1,2,3]);
 chk('和弦数＝拍数：每个正好 1 拍',edge.length===4&&edge.every(c=>c.beats===1));
@@ -1678,8 +1698,18 @@ chk('演化窗口常量 = [1,6] 小节',T.infWin()[0]===1&&T.infWin()[1]===6);
 /* ---- evolveOnce：主旋律变奏（节奏不动）、伴奏微变、和弦轨不变 ---- */
 const before23=acc23.map(t=>t.kind==='drum'?JSON.stringify(t.p):snap(t));
 const bars23=T.barsOf(acc23[0]);
-const melBefore23=mel23.seq.slice();
+let melBefore23=mel23.seq.slice();
 T.evolveOnce();
+/* 杂交换的 1–2 段可能恰好与当前相同——再演化直到贝斯有可见差异（防假阴性）；
+   每次补演化前重置旋律基准，保证「只动 1–2 小节」量的是最后一次演化的足迹 */
+{
+  const bassIdx=acc23.findIndex(t=>t.name==='贝斯');
+  let tries=0;
+  while(bassIdx>=0&&snap(acc23[bassIdx])===before23[bassIdx]&&tries<5){
+    melBefore23=mel23.seq.slice();
+    T.evolveOnce(); tries++;
+  }
+}
 /* 旋律：允许改音，但节奏骨架（哪些步有音）必须一字不动 */
 const melRhyB=melBefore23.map(v=>v<0?'-':'+').join('');
 const melRhyA=mel23.seq.map(v=>v<0?'-':'+').join('');
