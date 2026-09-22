@@ -180,11 +180,11 @@ const expose=`
   planToChords,setProgPlan,progKeyOf,planRoman,modeIdx:()=>modeIdx,PLAN_LIB,PROG_PLANS,STYLE,ROMAN,
   rateOf,rateName,spanOf,setRate,loopSteps,RATE_VALUES,
   toggleOpen,toggleFollow,isFollowing,applyFollow,syncFollowers,openId:()=>openTrackId,followOf:t=>!!t.follow,
-  toggleArp,setArpMode,setArpRate,arpRow,arpPoolAt,arpHitIdx,arpOn,arpFires,
-  noteDurOf,bpmGetter:()=>bpm,
-  ARP_MODE_NAME,ARP_RATE_NAME,ARP_RATE_SHORT,ARP_RATES,
+  toggleArp,setArpMode,setArpRate,setArpOct,setArpGate,arpRow,arpPoolAt,arpHitIdx,arpOn,arpFires,
+  noteDurOf,bpmGetter:()=>bpm,arpOctOf,arpGateOf,
+  ARP_MODE_NAME,ARP_RATE_NAME,ARP_RATE_SHORT,ARP_RATES,ARP_OCTS,ARP_GATES,ARP_GATE_SHORT,
   setMode:v=>{modeIdx=v;},
-  renderTracks,chordTones,followRow,playMidiOf,
+  renderTracks,chordTones,followRow,playMidiOf,rowMidi,
   renderMixer,mixerCard:()=>$('mixerCard'),setTrackVol,setTrackPan,setTrackMute,setTrackSolo,setTrackDelay,setTrackFxMix,
   setChordMute,setChordVolume,chordMuteGetter:()=>chordMute,chordVolGetter:()=>chordVol,
   setChordFxMix,isPlayingGetter:()=>isPlaying,shortInst,
@@ -1369,15 +1369,23 @@ chk('1/16 档：16 步全部触发',Array.from({length:16},(_,s)=>s).every(s=>T.
 /* 非法档回落 0（跟画） */
 T.setArpRate(ra,8);
 chk('setArpRate：非法值回落 0（跟画）',ra.arp.rate===0);
-/* 发音时值 noteDurOf：节奏档只改密度，单音时长恒为 1 格 */
+/* 发音时值 noteDurOf：节奏档只改密度；琶音音长 = 一步 × Gate%（默认 .75） */
 const sd=T.bpmGetter?60/T.bpmGetter()/4:null;      // stepDur = 60/bpm/4
-chk('noteDurOf：单音时长恒为 1.9 × stepDur × 声部速度（节奏档不改音长）',
-    Math.abs(T.noteDurOf(ra)-sd*1.9*T.rateOf(ra))<1e-9,'dur='+T.noteDurOf(ra));
+chk('noteDurOf：琶音音长 = stepDur × 声部速度 × Gate（默认 75%）',
+    Math.abs(T.noteDurOf(ra)-sd*.75*T.rateOf(ra))<1e-9,'dur='+T.noteDurOf(ra)+' expect='+(sd*.75*T.rateOf(ra)));
+T.setArpGate(ra,.25);
+chk('noteDurOf：Gate 25% → 短促（0.25 步长）',
+    Math.abs(T.noteDurOf(ra)-sd*.25*T.rateOf(ra))<1e-9);
+T.setArpGate(ra,1);
+chk('noteDurOf：Gate 100% → 连满（1.0 步长）',
+    Math.abs(T.noteDurOf(ra)-sd*1*T.rateOf(ra))<1e-9);
+T.setArpGate(ra,9);
+chk('setArpGate：非法值回落 75%',ra.arp.gate===.75&&Math.abs(T.noteDurOf(ra)-sd*.75*T.rateOf(ra))<1e-9);
 T.setArpRate(ra,4);
-chk('noteDurOf：1/4 自动档下单音时长不变（密度≠音长）',
-    Math.abs(T.noteDurOf(ra)-sd*1.9*T.rateOf(ra))<1e-9);
+chk('noteDurOf：1/4 自动档下音长仍只随 Gate（密度≠音长）',
+    Math.abs(T.noteDurOf(ra)-sd*.75*T.rateOf(ra))<1e-9);
 const nonArp=T.state.tracks.find(t=>t.kind==='inst'&&!(t.arp&&t.arp.on));
-chk('noteDurOf：非琶音声部同式（自然衰减由音色自己决定）',
+chk('noteDurOf：非琶音声部保持 1.9 × stepDur 自然衰减',
     nonArp?Math.abs(T.noteDurOf(nonArp)-sd*1.9*T.rateOf(nonArp))<1e-9:true);
 T.setArpRate(ra,1);
 /* 非破坏性：整轮节奏切换 tr.seq 一字不改 */
@@ -1409,18 +1417,43 @@ chk('改和弦 → 发声音高落在新和弦音池内（音高实时跟随和�
 T.state.prog[0]=T.mkChord(oldRoot21,T.state.prog[0].beats,T.state.prog[0].seventh);           // 换回原和弦
 T.syncFollowers();
 chk('换回原和弦 → 发声音高复原',T.followRow(ra,0)===before);
-/* ---- 存档：arpRate 持久化 ---- */
-T.setArpRate(ra,2); T.save();
+/* ---- 八度范围（经典 ARP Octaves 1–4）：音池向上叠 1–3 组八度 ---- */
+chk('默认八度范围 = 1（只在本组八度循环）',T.arpOctOf(ra)===1);
+const poolBase=T.arpPoolAt(ra,0);                  // oct=1 基组
+T.setArpOct(ra,2);
+const poolExt=T.arpPoolAt(ra,0);
+chk('setArpOct：八度 2 → 音池比基组长（叠加高八度组）',
+    !!poolBase&&!!poolExt&&poolExt.length>poolBase.length,'base='+poolBase.length+' ext='+poolExt.length);
+chk('八度音池：基组全部可上移的行都在高八度组中出现（同音级行号 -scLen）',
+    !!poolBase&&!!poolExt&&poolBase.every(r=>r-L21<0||poolExt.indexOf(r-L21)>=0),
+    'L='+L21+' base='+poolBase+' ext='+poolExt);
+chk('八度音池：音高升序排列',!!poolExt&&poolExt.every((r,i)=>i===0||T.rowMidi(poolExt[i-1])<T.rowMidi(r)));
+T.setArpRate(ra,1);
+chk('八度 sweeping：up 模式越过基组后进入高八度（有音比首音高整 12 半音）',
+    Array.from({length:poolExt.length},(_,s)=>T.rowMidi(T.followRow(ra,s)))
+      .some(m=>m-T.rowMidi(T.followRow(ra,0))===12));
+chk('八度 sweeping：发声行始终落在八度音池内',
+    Array.from({length:poolExt.length},(_,s)=>T.followRow(ra,s)).every(r=>poolExt.indexOf(r)>=0));
+T.setArpOct(ra,4);
+chk('setArpOct：八度 4 生效（音池最长）',T.arpOctOf(ra)===4&&T.arpPoolAt(ra,0).length>=poolExt.length);
+T.setArpOct(ra,9);
+chk('setArpOct：非法值回落 1',T.arpOctOf(ra)===1&&ra.arp.oct===1);
+/* 非破坏性：八度切换 tr.seq 一字不改 */
+chk('八度切换全程 tr.seq 一字不改（非破坏性）',String(ra.seq)===String(rSeq21));
+/* ---- 存档：arpRate / arpOct / arpGate 持久化 ---- */
+T.setArpRate(ra,2); T.setArpOct(ra,2); T.setArpGate(ra,.5); T.save();
 const raw21=JSON.parse(localStorage.getItem('polyseq.v7')||'{}');
-chk('存档含 arpRate=2',
-    !!(raw21.tracks&&raw21.tracks[0])&&raw21.tracks[0].arpRate===2,
-    'arpRate='+(raw21.tracks&&raw21.tracks[0]?raw21.tracks[0].arpRate:'无'));
+chk('存档含 arpRate=2 · arpOct=2 · arpGate=0.5',
+    !!(raw21.tracks&&raw21.tracks[0])&&raw21.tracks[0].arpRate===2
+      &&raw21.tracks[0].arpOct===2&&raw21.tracks[0].arpGate===.5,
+    'raw='+JSON.stringify(raw21.tracks&&raw21.tracks[0]&&{r:raw21.tracks[0].arpRate,o:raw21.tracks[0].arpOct,g:raw21.tracks[0].arpGate}));
 /* ---- 旧档（无 arpRate 字段）：安全回落 0（跟画） ---- */
 store['polyseq.v7']=JSON.stringify({tracks:[{id:1,kind:'inst',name:'旧',inst:'piano',oct:0,bars:1,rate:1,seq:[-1],vol:.85,pan:0,mute:false,solo:false,fx:'off',fxMix:1,p:{}}],prog:[],progEdited:false,progBars:1});
 T.loadSaved();
 const la21=T.state.tracks[0];
-chk('旧档读取：arpRate 安全回落 0（跟画）',
-    la21.arp&&la21.arp.rate===0&&la21.arp.on===false,'arp='+JSON.stringify(la21.arp));
+chk('旧档读取：arpRate 回落 0（跟画）、oct/gate 回落默认（1 / 75%）',
+    la21.arp&&la21.arp.rate===0&&la21.arp.on===false&&T.arpOctOf(la21)===1&&T.arpGateOf(la21)===.75,
+    'arp='+JSON.stringify(la21.arp));
 /* ---- (C) 版旧档 arpRate=0（跟画）+ 开关开 → 原语义原样保留 ---- */
 store['polyseq.v7']=JSON.stringify({tracks:[{id:1,kind:'inst',name:'旧0',inst:'piano',oct:0,bars:1,rate:1,seq:[0],arpOn:true,arpMode:'up',arpRate:0,vol:.85,pan:0,mute:false,solo:false,fx:'off',fxMix:1,p:{}}],prog:[],progEdited:false,progBars:1});
 T.loadSaved();
@@ -1433,17 +1466,25 @@ T.loadSaved();
 chk('旧档 arpRate=2（音长档）→ 1/8 自动滚、开关保留',
     T.state.tracks[0].arp.rate===2&&T.arpFires(T.state.tracks[0],2)===true,
     'arp='+JSON.stringify(T.state.tracks[0].arp));
-/* ---- undo：快照含 arpRate ---- */
+/* ---- 旧档带 arpOct / arpGate 字段 → 原样恢复 ---- */
+store['polyseq.v7']=JSON.stringify({tracks:[{id:1,kind:'inst',name:'旧OG',inst:'piano',oct:0,bars:1,rate:1,seq:[0],arpOn:true,arpMode:'down',arpRate:1,arpOct:3,arpGate:.25,vol:.85,pan:0,mute:false,solo:false,fx:'off',fxMix:1,p:{}}],prog:[],progEdited:false,progBars:1});
+T.loadSaved();
+chk('旧档 arpOct=3 · arpGate=0.25 原样恢复',
+    T.arpOctOf(T.state.tracks[0])===3&&T.arpGateOf(T.state.tracks[0])===.25,
+    'arp='+JSON.stringify(T.state.tracks[0].arp));
+/* ---- undo：快照含 arpRate / arpOct / arpGate ---- */
 const uc=T.makeTrack('inst','uc','piano',0);
 T.state.tracks.length=0; T.state.tracks.push(uc);
 uc.seq=new Array(16).fill(-1); uc.seq[0]=4;
-uc.arp={on:true,mode:'up',rate:4};
-T.pushUndo();                                      // 快照：rate=4
-T.setArpRate(uc,2);
-chk('setArpRate：改档生效',uc.arp.rate===2);
+uc.arp={on:true,mode:'up',rate:4,oct:3,gate:.5};
+T.pushUndo();                                      // 快照：rate=4 · oct=3 · gate=.5
+T.setArpRate(uc,2); T.setArpOct(uc,1); T.setArpGate(uc,1);
+chk('setArpRate/setArpOct/setArpGate：改档生效',
+    uc.arp.rate===2&&uc.arp.oct===1&&uc.arp.gate===1);
 T.undo();
 const ud=T.state.tracks[0];                        // undo 按快照重建声部对象：必须重取活动引用
-chk('undo：恢复 rate=4（快照含节奏档）',ud.arp.rate===4,'arp='+JSON.stringify(ud.arp));
+chk('undo：恢复 rate=4 · oct=3 · gate=.5（快照含三档）',
+    ud.arp.rate===4&&ud.arp.oct===3&&ud.arp.gate===.5,'arp='+JSON.stringify(ud.arp));
 /* ---- UI：节奏下拉 ---- */
 T.renderTracks();
 const rc21=T.cardOf(ud.id);
@@ -1461,12 +1502,36 @@ chk('改档后摘要即时更新（含 ·1/8）',sumR.indexOf('·1/8')>=0,'sum='
 T.setArpMode(ud,'updown');
 const sumM=(T.cardOf(ud.id).el.querySelector('.tc-sum .s-sum')||{textContent:''}).textContent;
 chk('改图案后摘要即时更新（含 上下）',sumM.indexOf('上下')>=0,'sum='+sumM);
-/* 开关关掉 → 下拉禁用但值保留 */
+/* UI：八度范围下拉 + 音长（Gate）下拉 */
+const oSel=rc21&&rc21.el.querySelector('select.arp-oct');
+chk('八度下拉存在、开关开着时可用、值随 undo 恢复为 3',
+    !!oSel&&oSel.disabled===false&&oSel.value==='3','sel='+(oSel?'value='+oSel.value:'无'));
+chk('八度下拉共 4 档（1–4 八度）',
+    !!oSel&&oSel.options.length===4&&String(oSel.options[0].value)==='1'&&String(oSel.options[3].value)==='4',
+    'n='+(oSel&&oSel.options.length));
+const gSel=rc21&&rc21.el.querySelector('select.arp-gate');
+chk('音长（Gate）下拉存在、值 0.5',
+    !!gSel&&gSel.disabled===false&&gSel.value==='0.5','sel='+(gSel?'value='+gSel.value:'无'));
+chk('音长下拉共 4 档（.25/.5/.75/1）',
+    !!gSel&&gSel.options.length===4&&gSel.options[0].value==='0.25'&&gSel.options[3].value==='1',
+    'n='+(gSel&&gSel.options.length));
+oSel.value='4'; oSel.fire('change');
+gSel.value='0.25'; gSel.fire('change');
+chk('下拉改八度/音长 → tr.arp 跟着变',ud.arp.oct===4&&ud.arp.gate===.25,
+    'arp='+JSON.stringify(ud.arp));
+const sumOG=(T.cardOf(ud.id).el.querySelector('.tc-sum .s-sum')||{textContent:''}).textContent;
+chk('摘要即时更新（含 ·4八度 ·门25%）',
+    sumOG.indexOf('·4八度')>=0&&sumOG.indexOf('·门25%')>=0,'sum='+sumOG);
+/* 开关关掉 → 全部下拉禁用但值保留 */
 T.toggleArp(ud);                                   // → 关（内部 renderTracks 重建卡片）
 const rc22=T.cardOf(ud.id);
 const rSel2=rc22&&rc22.el.querySelector('select.arp-rate');
-chk('琶音关闭 → 节奏下拉禁用（值保留）',
-    !!rSel2&&rSel2.disabled===true&&rSel2.value==='2'&&ud.arp.rate===2);
+const oSel2=rc22&&rc22.el.querySelector('select.arp-oct');
+const gSel2=rc22&&rc22.el.querySelector('select.arp-gate');
+chk('琶音关闭 → 节奏/八度/音长下拉全部禁用（值保留）',
+    !!rSel2&&rSel2.disabled===true&&rSel2.value==='2'&&ud.arp.rate===2
+      &&!!oSel2&&oSel2.disabled===true&&oSel2.value==='4'
+      &&!!gSel2&&gSel2.disabled===true&&gSel2.value==='0.25');
 /* 摘要行：恒带节奏短名「琶音·图案·节奏」 */
 T.toggleArp(ud);                                   // → 再开（内部 renderTracks）
 const sum21=T.cardOf(ud.id).el.querySelector('.tc-sum .s-sum');
@@ -1504,17 +1569,25 @@ function midiSpans(u8){
   return best||[];
 }
 T.state.tracks.length=0; T.state.tracks.push(ra);  // 只导出这一个琶音声部
-T.setRate(ra,1);
+T.setRate(ra,1); T.setArpRate(ra,2); T.setArpOct(ra,1); T.setArpGate(ra,.75);
 /* 本节的 MIDI 只含 1 个声部（<200 字节），不能用带阈值过滤的 latestMidi —— 直接取最后一个 Blob */
 const myMidi=()=>{ const b=globalThis.__blobs||[]; const p=(b[b.length-1]||[])[0]; return p&&p.length?p:null; };
-/* 1/8 自动档：偶数格全触发（画没画都响），每音 1 格长 */
-T.setArpRate(ra,2); T.exportMidi();
+/* 1/8 自动档：偶数格全触发（画没画都响），音长随 Gate%（PPQ960 · 声部速度 1/16 → 每格 240 tick） */
+chk('MIDI 前置：音池回到单八度',T.arpPoolAt(ra,0).length===poolBase.length);
+T.exportMidi();
 const spansA=midiSpans(myMidi());
 chk('MIDI：1/8 自动档 16 步触发 8 个音（每 2 格一音）',
     spansA.length===8&&[0,2,4,6,8,10,12,14].every((s,i)=>spansA[i]&&spansA[i].on===s*240),
     'spans='+JSON.stringify(spansA.map(x=>[x.on,x.off])));
-chk('MIDI：每个琶音音 1 步长（note off = 240 tick）',
-    spansA.length>0&&spansA.every(x=>x.off-x.on===240),'spans='+JSON.stringify(spansA.map(x=>x.off-x.on)));
+chk('MIDI：Gate 75% → note off 在 +180 tick',
+    spansA.length>0&&spansA.every(x=>x.off-x.on===180),'spans='+JSON.stringify(spansA.map(x=>x.off-x.on)));
+T.setArpGate(ra,1); T.exportMidi();
+chk('MIDI：Gate 100% → note off 在 +240 tick（整步）',
+    midiSpans(myMidi()).every(x=>x.off-x.on===240));
+T.setArpGate(ra,.25); T.exportMidi();
+chk('MIDI：Gate 25% → note off 在 +60 tick（短促）',
+    midiSpans(myMidi()).every(x=>x.off-x.on===60));
+T.setArpGate(ra,.75);
 /* 跟画档：只有画的 3 个 step 发声 */
 T.setArpRate(ra,0); T.exportMidi();
 const evCount=midiSpans(myMidi()).length;

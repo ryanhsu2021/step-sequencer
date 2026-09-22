@@ -265,19 +265,43 @@ const ARP_MODE_NAME={up:'上行',down:'下行',updown:'上下',random:'随机'};
 const ARP_RATES=[0,1,2,4];
 const ARP_RATE_NAME={0:'跟画',1:'1/16（每格）',2:'1/8（每 2 格）',4:'1/4（每 4 格）'};
 const ARP_RATE_SHORT={0:'跟画',1:'1/16',2:'1/8',4:'1/4'};
+/* 八度范围（经典 ARP 的 Octaves 1–4）：音池在基组之上再叠加高 1·2·3 个八度的同音级行，
+   琶音跨越多个八度 sweeping——只有 1 组时 4 个音来回打转是「不对味」的最常见原因 */
+const ARP_OCTS=[1,2,3,4];
+/* 音长 Gate（经典 ARP 的 Gate %）：每个音持续「一步 × Gate」，
+   25% 短促打击感 ↔ 100% 连满无缝——staccato/legato 的手感开关 */
+const ARP_GATES=[.25,.5,.75,1];
+const ARP_GATE_NAME={0.25:'25% · 短促',0.5:'50% · 适中',0.75:'75% · 饱满',1:'100% · 连满'};
+const ARP_GATE_SHORT={0.25:'25%',0.5:'50%',0.75:'75%',1:'100%'};
 const arpOn=tr=>!!tr&&tr.kind==='inst'&&!!(tr.arp&&tr.arp.on);
+/* 八度范围（1–4）：非法值回落 1；音长 Gate（.25–1）：非法值回落 .75 */
+const arpOctOf=tr=>{ const o=tr&&tr.arp&&tr.arp.oct|0; return ARP_OCTS.indexOf(o)>=0?o:1; };
+const arpGateOf=tr=>{ const g=tr&&tr.arp&&tr.arp.gate; return ARP_GATES.indexOf(g)>=0?g:.75; };
 /* 该步是否发声：跟画档＝画了才响；自动档＝按节拍滚（画没画都响） */
 function arpFires(tr,s){
   const r=((tr.arp&&tr.arp.rate)|0)||0;
   return r>=1 ? (s%r===0) : tr.seq[s]>=0;
 }
-/* 当前步所属和弦的和弦音行（音高升序：r 越大音越低，所以从大到小遍历） */
+/* 当前步所属和弦的和弦音行（音高升序：r 越大音越低，所以从大到小遍历）。
+   八度范围 >1 时把基组再向上叠 oct-1 组：同音级行号 -scLen()（每 scLen 行一个八度）。
+   行号为负也有效——rowMidi 是线性公式（rowMidi(r)=rowMidi(r+scLen)-12），超出网格顶端的
+   音照常发声/导出，只是网格上没有那行可画幽灵标记。与网格内已有行同音高的（八度根回卷
+   重叠等）按音高去重跳过，保证 up/down 图案不会连打两个同音 */
 function arpPoolAt(tr,s){
   const ca=chordAtFor(state.prog,stepsOf(tr));
   const set=ca&&ca[s];
   if(!set||!set.size) return null;
-  const rows=[];
-  for(let r=ROWS-1;r>=0;r--) if(set.has(degOfRow(r))) rows.push(r);
+  const L=scLen(), oct=arpOctOf(tr), rows=[], seen=new Set();
+  for(let k=0;k<oct;k++){
+    let added=0;
+    for(let r=ROWS-1;r>=0;r--){
+      if(!set.has(degOfRow(r))) continue;       // degOfRow(r)===degOfRow(r-k·L)
+      const rr=r-k*L, m=rowMidi(rr);
+      if(seen.has(m)) continue;                 // 音高去重（基组已含的高八度根等）
+      seen.add(m); rows.push(rr); added++;
+    }
+    if(k>0&&!added) break;                      // 这一组八度一个新音都没添：到此为止
+  }
   return rows.length?rows:null;
 }
 /* 该步是本轮循环里的第几个触发音（0-based）——决定它拿音池里的第几个音。
@@ -308,7 +332,7 @@ function arpRow(tr,s){
 /* 「琶音」开关：开启后按「节奏」档发声（音序数据不动，关掉立即复原） */
 function toggleArp(tr){
   if(!tr||tr.kind!=='inst') return;
-  if(!tr.arp) tr.arp={on:false,mode:'up',rate:0};
+  if(!tr.arp) tr.arp={on:false,mode:'up',rate:0,oct:1,gate:.75};
   tr.arp.on=!tr.arp.on;
   renderTracks(); save();
   toast(tr.arp.on
@@ -318,7 +342,7 @@ function toggleArp(tr){
 /* 琶音图案：up / down / updown / random（开关开着才重画幽灵标记） */
 function setArpMode(tr,m){
   if(!tr||tr.kind!=='inst') return;
-  if(!tr.arp) tr.arp={on:false,mode:'up',rate:0};
+  if(!tr.arp) tr.arp={on:false,mode:'up',rate:0,oct:1,gate:.75};
   tr.arp.mode=ARP_MODE_IDS.indexOf(m)>=0?m:'up';
   if(tr.arp.on){
     const card=view.cards.get(tr.id);
@@ -331,7 +355,7 @@ function setArpMode(tr,m){
    自动档下画的音符让位给节拍滚 */
 function setArpRate(tr,r){
   if(!tr||tr.kind!=='inst') return;
-  if(!tr.arp) tr.arp={on:false,mode:'up',rate:0};
+  if(!tr.arp) tr.arp={on:false,mode:'up',rate:0,oct:1,gate:.75};
   const q=r|0;
   tr.arp.rate=ARP_RATES.indexOf(q)>=0?q:0;
   if(tr.arp.on){
@@ -341,6 +365,33 @@ function setArpRate(tr,r){
   save();
   toast('🎼 「'+tr.name+'」琶音节奏 → '+(ARP_RATE_NAME[tr.arp.rate]||'跟画')
     +(tr.arp.rate>=1?'——按节拍自动滚，画的音符暂时让位（原样保留）':'——按你画的节奏发声')
+    +(tr.arp.on?'':'（琶音开关目前是关的）'));
+}
+/* 八度范围：1–4，音池向上叠 1–3 组八度（经典 ARP 的 Octaves） */
+function setArpOct(tr,o){
+  if(!tr||tr.kind!=='inst') return;
+  if(!tr.arp) tr.arp={on:false,mode:'up',rate:0,oct:1,gate:.75};
+  const q=o|0;
+  tr.arp.oct=ARP_OCTS.indexOf(q)>=0?q:1;
+  if(tr.arp.on){
+    const card=view.cards.get(tr.id);
+    if(card&&card.kind==='inst'){ refreshAllSteps(tr); refreshSummary(tr); }   // 摘要行与幽灵标记都要跟上
+  }
+  save();
+  toast('🎼 「'+tr.name+'」琶音八度范围 → '+tr.arp.oct+' 组'+(tr.arp.oct>1?'——音池向上叠加 '+tr.arp.oct+' 个八度，跨度 sweep 更宽':'——只在本组八度内循环')
+    +(tr.arp.on?'':'（琶音开关目前是关的）'));
+}
+/* 音长 Gate：每音持续「一步 × Gate%」——短促打击感 ↔ 连满无缝（经典 ARP 的 Gate） */
+function setArpGate(tr,g){
+  if(!tr||tr.kind!=='inst') return;
+  if(!tr.arp) tr.arp={on:false,mode:'up',rate:0,oct:1,gate:.75};
+  tr.arp.gate=ARP_GATES.indexOf(g)>=0?g:.75;
+  if(tr.arp.on){
+    const card=view.cards.get(tr.id);
+    if(card&&card.kind==='inst'){ refreshSummary(tr); }   // 网格标记不受 Gate 影响，摘要跟一下即可
+  }
+  save();
+  toast('🎼 「'+tr.name+'」琶音音长（Gate）→ '+(ARP_GATE_NAME[tr.arp.gate]||'75% · 饱满')
     +(tr.arp.on?'':'（琶音开关目前是关的）'));
 }
 /* 和弦轨变化后：跟随声部的音高由 followRow 在播放时实时折算，琶音声部的音池也随和弦实时变化，

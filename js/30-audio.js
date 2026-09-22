@@ -442,7 +442,9 @@ const VOICE={
   },
 };
 function noteDurOf(tr){
-  return stepDur()*rateOf(tr)*1.9;   // 每个音 1 格长（随声部速度缩放）；琶音节奏档只改密度，不改单音时长
+  /* 非琶音：1.9 步自然衰减（重叠的拨弦手感）；
+     琶音：一步 × Gate%（经典 ARP 的 Gate）——短促打击感 ↔ 连满无缝 */
+  return stepDur()*rateOf(tr)*(arpOn(tr)?arpGateOf(tr):1.9);
 }
 function playTrackNote(tr,row,t,vel){
   ensureAudio();

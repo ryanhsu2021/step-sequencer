@@ -780,6 +780,26 @@ function buildCard(tr,i){
       '格子时值以本声部「速度」档为基准（速度 1/16 时，1/8 档即每 2 格一音）';
     arpLenSel.addEventListener('change',()=>setArpRate(tr,+arpLenSel.value));
     gHar.appendChild(arpLenSel);
+    /* 「八度」下拉（经典 ARP 的 Octaves）：音池向上叠 1–3 组八度，跨度 sweeping */
+    const arpOctSel=document.createElement('select');
+    arpOctSel.className='arp-oct';
+    ARP_OCTS.forEach(o=>arpOctSel.add(new Option(o+' 八度'+(o>1?'（跨 '+o+' 组）':''),String(o))));
+    arpOctSel.value=String(arpOctOf(tr));
+    arpOctSel.disabled=!arpOn(tr);
+    arpOctSel.title='琶音八度范围（Octaves）：1＝只在本组八度内循环；2–4＝音池向上叠加同音级行，'+
+      '琶音跨越多个八度 sweeping（跨度更大、更「经典合成器琶音」）';
+    arpOctSel.addEventListener('change',()=>setArpOct(tr,+arpOctSel.value));
+    gHar.appendChild(arpOctSel);
+    /* 「音长」下拉（经典 ARP 的 Gate %）：每音持续「一步 × Gate」——短促打击感 ↔ 连满无缝 */
+    const arpGateSel=document.createElement('select');
+    arpGateSel.className='arp-gate';
+    ARP_GATES.forEach(g=>arpGateSel.add(new Option(ARP_GATE_NAME[g],String(g))));
+    arpGateSel.value=String(arpGateOf(tr));
+    arpGateSel.disabled=!arpOn(tr);
+    arpGateSel.title='琶音音长（Gate）：每个音持续「一步 × Gate%」——'+
+      '25% 短促打击感、50% 适中、75% 饱满、100% 连满无缝（staccato ↔ legato 的手感开关）';
+    arpGateSel.addEventListener('change',()=>setArpGate(tr,+arpGateSel.value));
+    gHar.appendChild(arpGateSel);
     const gVoice=tmGroup('音色');
     const sel=document.createElement('select'); fillInstSelect(sel,tr.inst);
     sel.addEventListener('change',()=>{tr.inst=sel.value;refreshSub(tr);save();});
@@ -830,7 +850,11 @@ function refreshSummary(tr){
     parts.push(notes+' 音');
     if(tr.follow) parts.push('🔗 跟随和弦');
     if(arpOn(tr)){
-      parts.push('🎼 琶音·'+(ARP_MODE_NAME[(tr.arp&&tr.arp.mode)||'up']||'上行')+'·'+(ARP_RATE_SHORT[(tr.arp&&tr.arp.rate)|0]||'跟画'));
+      const a=tr.arp||{};
+      let ap='🎼 琶音·'+(ARP_MODE_NAME[a.mode]||'上行')+'·'+(ARP_RATE_SHORT[(a.rate)|0]||'跟画');
+      if(arpOctOf(tr)>1) ap+='·'+arpOctOf(tr)+'八度';
+      if(arpGateOf(tr)!==.75) ap+='·门'+ARP_GATE_SHORT[arpGateOf(tr)];
+      parts.push(ap);
     }
   }
   s.textContent=parts.join(' · ');
