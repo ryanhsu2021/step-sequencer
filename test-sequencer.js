@@ -209,7 +209,7 @@ console.log('== 1. 初始状态 ==');
 /* 示例曲：主旋律 + 贝斯 + 琶音 + 鼓组，若该风格要铺底则再多一条「铺底」 */
 chk('示例曲声部数正确（4 或 5：含可选铺底）',T.state.tracks.length===4||T.state.tracks.length===5,
     'n='+T.state.tracks.length);
-chk('示例曲包含主旋律/贝斯/琶音/鼓组',['主旋律','贝斯','琶音 Arp','鼓组']
+chk('示例曲包含主旋律/贝斯/琶音器/鼓组',['主旋律','贝斯','琶音器','鼓组']
     .every(nm=>T.state.tracks.some(t=>t.name===nm)));
 chk('铺底声部与风格 padRole 一致（不建无用空声部）',
     T.state.tracks.some(t=>t.name==='铺底')===!!T.SP_().padRole);
@@ -1139,7 +1139,7 @@ console.log('== 19. 🎼 一键编配 v2：分析旋律 → 更贴合的编配 =
       const n=setup(r%9);
       T.autoArrange();
       const bass=T.state.tracks.find(t=>t.name==='贝斯');
-      const arp=T.state.tracks.find(t=>t.name==='琶音 Arp');
+      const arp=T.state.tracks.find(t=>t.name==='琶音器');
       const pad=T.state.tracks.find(t=>t.name==='铺底');
       /* 每个声部可能和旋律小节数不同：一律按「该声部自己的长度」取和声帧 */
       const caOf=tr=>T.chordAtFor(T.progFor(),T.stepsOf(tr));
@@ -1209,7 +1209,7 @@ console.log('== 19. 🎼 一键编配 v2：分析旋律 → 更贴合的编配 =
   chk('要铺底的风格确实生成了铺底音符（'+(padRounds?padRounds+' 轮':'无该风格')+'）',
       padRounds===0||padTot>0);
   /* 三层都铺满全曲（长度与最长声部一致） */
-  chk('三个伴奏声部都铺满 4 小节（64 步）',['贝斯','琶音 Arp'].every(nm=>{
+  chk('三个伴奏声部都铺满 4 小节（64 步）',['贝斯','琶音器'].every(nm=>{
     const t=T.state.tracks.find(x=>x.name===nm); return t&&T.stepsOf(t)===64;
   })&&['铺底'].every(nm=>{ const t=T.state.tracks.find(x=>x.name===nm); return !t||T.stepsOf(t)===64; }));
   /* 旋律有音 → 一定有编配产出 */
@@ -1218,7 +1218,7 @@ console.log('== 19. 🎼 一键编配 v2：分析旋律 → 更贴合的编配 =
       T.state.tracks.find(t=>t.name==='贝斯')&&T.stepsOf(T.state.tracks.find(t=>t.name==='贝斯'))===64);
   /* 多样化：连续两次编配结果不应完全相同 */
   setup(1);
-  const arr1=()=>{ T.autoArrange(); const b=T.state.tracks.find(t=>t.name==='贝斯'),a=T.state.tracks.find(t=>t.name==='琶音 Arp');
+  const arr1=()=>{ T.autoArrange(); const b=T.state.tracks.find(t=>t.name==='贝斯'),a=T.state.tracks.find(t=>t.name==='琶音器');
     return JSON.stringify([b&&b.seq,a&&a.seq]); };
   const s1=arr1(), s2=arr1(), s3=arr1();
   chk('连点编配结果不同（≥2 个版本 / 3 次）',new Set([s1,s2,s3]).size>=2,'distinct='+new Set([s1,s2,s3]).size);
@@ -1332,11 +1332,11 @@ T.cardOf(ub.id).el.querySelectorAll('button.switch')[1].fire('click');   // → 
 const ucardC=T.cardOf(ub.id);
 chk('再点开关 → arp 关、下拉重新禁用',
     T.arpOn(ub)===false&&ucardC.el.querySelector('select.arp-mode').disabled===true);
-/* 摘要行：开着时显示「🎼 琶音·图案」 */
+/* 摘要行：开着时显示「🎼 琶音器·短图案名」（Up / Down / Up-Down / Rnd） */
 T.toggleArp(ub); T.setArpMode(ub,'down'); T.renderTracks();
 const ucard2=T.cardOf(ub.id);
 const sumTxt=ucard2.el.querySelector('.tc-sum .s-sum');
-chk('收起摘要含「🎼 琶音·下行」',!!sumTxt&&sumTxt.textContent.indexOf('琶音·下行')>=0,
+chk('收起摘要含「🎼 琶音器·Down」',!!sumTxt&&sumTxt.textContent.indexOf('琶音器·Down')>=0,
     'sum='+(sumTxt&&sumTxt.textContent));
 
 /* ============================================================
@@ -1510,7 +1510,7 @@ const sumR=(T.cardOf(ud.id).el.querySelector('.tc-sum .s-sum')||{textContent:''}
 chk('改档后摘要即时更新（含 ·1/8）',sumR.indexOf('·1/8')>=0,'sum='+sumR);
 T.setArpMode(ud,'updown');
 const sumM=(T.cardOf(ud.id).el.querySelector('.tc-sum .s-sum')||{textContent:''}).textContent;
-chk('改图案后摘要即时更新（含 上下）',sumM.indexOf('上下')>=0,'sum='+sumM);
+chk('改图案后摘要即时更新（含 Up-Down）',sumM.indexOf('Up-Down')>=0,'sum='+sumM);
 /* UI：八度范围下拉 + 音长（Gate）下拉 */
 const oSel=rc21&&rc21.el.querySelector('select.arp-oct');
 chk('八度下拉存在、开关开着时可用、值随 undo 恢复为 3',
@@ -1529,8 +1529,8 @@ gSel.value='0.25'; gSel.fire('change');
 chk('下拉改八度/音长 → tr.arp 跟着变',ud.arp.oct===4&&ud.arp.gate===.25,
     'arp='+JSON.stringify(ud.arp));
 const sumOG=(T.cardOf(ud.id).el.querySelector('.tc-sum .s-sum')||{textContent:''}).textContent;
-chk('摘要即时更新（含 ·4八度 ·门25%）',
-    sumOG.indexOf('·4八度')>=0&&sumOG.indexOf('·门25%')>=0,'sum='+sumOG);
+chk('摘要即时更新（含 ·4八度 ·Gate 25%）',
+    sumOG.indexOf('·4八度')>=0&&sumOG.indexOf('Gate 25%')>=0,'sum='+sumOG);
 /* 开关关掉 → 全部下拉禁用但值保留 */
 T.toggleArp(ud);                                   // → 关（内部 renderTracks 重建卡片）
 const rc22=T.cardOf(ud.id);
@@ -1541,11 +1541,11 @@ chk('琶音关闭 → 节奏/八度/音长下拉全部禁用（值保留）',
     !!rSel2&&rSel2.disabled===true&&rSel2.value==='2'&&ud.arp.rate===2
       &&!!oSel2&&oSel2.disabled===true&&oSel2.value==='4'
       &&!!gSel2&&gSel2.disabled===true&&gSel2.value==='0.25');
-/* 摘要行：恒带节奏短名「琶音·图案·节奏」 */
+/* 摘要行：恒带节奏短名「琶音器·图案·节奏」 */
 T.toggleArp(ud);                                   // → 再开（内部 renderTracks）
 const sum21=T.cardOf(ud.id).el.querySelector('.tc-sum .s-sum');
-chk('收起摘要含「琶音·上下·1/8」',
-    !!sum21&&sum21.textContent.indexOf('琶音·上下·1/8')>=0,'sum='+(sum21&&sum21.textContent));
+chk('收起摘要含「琶音器·Up-Down·1/8」',
+    !!sum21&&sum21.textContent.indexOf('琶音器·Up-Down·1/8')>=0,'sum='+(sum21&&sum21.textContent));
 T.setArpRate(ud,0);
 const sumF=(T.cardOf(ud.id).el.querySelector('.tc-sum .s-sum')||{textContent:''}).textContent;
 chk('摘要：跟画档显示「·跟画」',sumF.indexOf('·跟画')>=0,'sum='+sumF);
@@ -1614,11 +1614,11 @@ chk('旋律声部下拉分 4 组（旋律/和声/低音/节奏）',
       &&Array.from(nSel.querySelectorAll('optgroup')).map(g=>g.label).join('/')==='旋律/和声/低音/节奏',
     'groups='+Array.from(nSel?nSel.querySelectorAll('optgroup'):[]).map(g=>g.label));
 const nameBefore=nm.name;
-nSel.value='琶音'; nSel.fire('change');
-chk('选中「琶音」→ tr.name 改名、输入框同步、下拉回落 ▾',
-    nm.name==='琶音'&&nmCard.el.querySelector('.tc-name').value==='琶音'&&nSel.value==='',
+nSel.value='琶音器'; nSel.fire('change');
+chk('选中「琶音器」→ tr.name 改名、输入框同步、下拉回落 ▾',
+    nm.name==='琶音器'&&nmCard.el.querySelector('.tc-name').value==='琶音器'&&nSel.value==='',
     'name='+nm.name+' sel='+nSel.value);
-chk('改名后已存档',JSON.parse(localStorage.getItem('polyseq.v7')||'{}').tracks.some(t=>t.name==='琶音'));
+chk('改名后已存档',JSON.parse(localStorage.getItem('polyseq.v7')||'{}').tracks.some(t=>t.name==='琶音器'));
 nm.name=nameBefore; T.save();                       // 还原，避免影响后续读取
 /* 鼓声部：只有节奏组（鼓组/律动/打击） */
 const dm=T.makeTrack('drum','d0','pop',0);

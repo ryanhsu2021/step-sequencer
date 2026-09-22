@@ -634,7 +634,7 @@ function buildCard(tr,i){
       (isOpen?'收起音序面板':'展开音序面板')+'"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2.5 L8 6 L4 9.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></button>'+
     '<span class="tc-num">'+(i+1)+'</span>'+
     '<input class="tc-name" maxlength="14" spellcheck="false">'+
-    '<select class="tc-name-pick" title="常用声部名：点开直接选一个（鼓组 · 琶音 · 贝斯 · 铺底……），不用手动输入；仍可自由改名"></select>'+
+    '<select class="tc-name-pick" title="常用声部名：点开直接选一个（鼓组 · 琶音器 · 贝斯 · 铺底……），不用手动输入；仍可自由改名"></select>'+
     '<span class="tc-sub"></span><span class="spacer"></span>'+
     '<div class="tc-btns">'+
       '<span class="tb-group">'+
@@ -662,10 +662,10 @@ function buildCard(tr,i){
   const name=head.querySelector('.tc-name'); name.value=tr.name;
   name.addEventListener('input',()=>{tr.name=name.value||'声部';head.querySelector('.tc-sub').textContent=trackDesc(tr);save();});
   /* 「常用名」下拉：按声部类型给一组常用名称，选中即改名（手输不受影响，选完弹回落回 ▾）。
-     与 ✨ 编配的命名口径一致（贝斯 / 琶音 Arp / 铺底 / 鼓组），保持全站词汇统一 */
+     与 ✨ 编配的命名口径一致（贝斯 / 琶音器 / 铺底 / 鼓组），保持全站词汇统一 */
   const namePick=head.querySelector('.tc-name-pick');
   const NAME_PRESETS_DRUM=['鼓组','律动','打击'];
-  const NAME_PRESETS_INST=[['旋律',['主旋律','副旋律','华彩','呼应']],['和声',['琶音','琶音 Arp','铺底','和声']],['低音',['贝斯','低音']],['节奏',['切分柱式','分解和弦']]];
+  const NAME_PRESETS_INST=[['旋律',['主旋律','副旋律','华彩','呼应']],['和声',['琶音器','铺底','和声']],['低音',['贝斯','低音']],['节奏',['切分柱式','分解和弦']]];
   namePick.add(new Option('▾',''));
   (tr.kind==='drum'
     ?[['节奏',NAME_PRESETS_DRUM]]
@@ -765,20 +765,20 @@ function buildCard(tr,i){
     fol.title=(tr.follow
       ?'跟随和弦进行：已开启——调整上方和弦轨时，本声部音高会自动吸附到和弦音（已落在和弦内的音不会二次改动）。点一下关闭'
       :'跟随和弦进行：已关闭——播放与编辑互不干扰。点一下开启，现有音符会立即吸附一次，之后继续跟随')
-      +(arpOn(tr)?'（注：琶音开启时发声由琶音接管，本开关的音高折算暂不参与——关闭琶音即恢复）':'');
+      +(arpOn(tr)?'（注：琶音器开启时发声由琶音器接管，本开关的音高折算暂不参与——关闭琶音器即恢复）':'');
     fol.addEventListener('click',()=>toggleFollow(tr));
     gHar.appendChild(fol);
-    /* 「琶音」开关 + 图案下拉：开启后画下的音符只当节奏用，实际音高按图案从当前和弦生成
+    /* 「琶音器」开关 + 图案下拉：开启后画下的音符只当节奏用，实际音高按图案从当前和弦生成
        （非破坏性，与跟随和弦同一条 followRow 管线；renderTracks 重建后 disabled 状态自动跟上） */
     const arpSw=document.createElement('button');
     arpSw.type='button';
     arpSw.className='chip btn-like switch'+(arpOn(tr)?' on':'');
     arpSw.setAttribute('role','switch');
     arpSw.setAttribute('aria-checked',arpOn(tr)?'true':'false');
-    arpSw.innerHTML='<span class="sw-lb">琶音</span><span class="sw-track"><i></i></span>';
+    arpSw.innerHTML='<span class="sw-lb">琶音器</span><span class="sw-track"><i></i></span>';
     arpSw.title=arpOn(tr)
-      ?'琶音模式：已开启——画下的音符只当节奏栅格用，实际音高按「'+(ARP_MODE_NAME[tr.arp.mode]||'上行')+'」从当前和弦的和弦音自动生成（空步不推进图案）。点一下关闭，音高立即复原'
-      :'琶音模式：已关闭——按你画的原样播放。点一下开启：画下的音符变成节奏栅格，音高从当前和弦的和弦音音池（根·三·五·高八度根）按图案自动生成';
+      ?'琶音器（ARP）：已开启——画下的音符只当节奏栅格用，实际音高按「'+(ARP_MODE_NAME[tr.arp.mode]||'上行 Up')+'」从当前和弦的和弦音自动生成（空步不推进图案）。点一下关闭，音高立即复原'
+      :'琶音器（ARP）：已关闭——按你画的原样播放。点一下开启：画下的音符变成节奏栅格，音高从当前和弦的和弦音音池（根·三·五·高八度根）按图案自动生成';
     arpSw.addEventListener('click',()=>toggleArp(tr));
     gHar.appendChild(arpSw);
     const arpSel=document.createElement('select');
@@ -786,7 +786,7 @@ function buildCard(tr,i){
     ARP_MODE_IDS.forEach(id=>arpSel.add(new Option(ARP_MODE_NAME[id],id)));
     arpSel.value=(tr.arp&&tr.arp.mode)||'up';
     arpSel.disabled=!arpOn(tr);
-    arpSel.title='琶音图案：上行（顺着爬）／下行（倒着走）／上下（到顶折返、端点不重复）／随机（同一格每轮同音，预览即实际）。'+
+    arpSel.title='琶音器图案（经典 ARP 的 Pattern）：上行 Up（顺着爬）／下行 Down（倒着走）／上下 Up-Down（到顶折返、端点不重复）／随机 Random（同一格每轮同音，预览即实际）。'+
       '音高音池实时取自上方和弦进行轨——改和弦、换进行、调拍长，琶音都跟着变';
     arpSel.addEventListener('change',()=>setArpMode(tr,arpSel.value));
     gHar.appendChild(arpSel);
@@ -797,7 +797,7 @@ function buildCard(tr,i){
       .forEach(p=>arpLenSel.add(new Option(p[1],String(p[0]))));
     arpLenSel.value=String((tr.arp&&tr.arp.rate)|0);
     arpLenSel.disabled=!arpOn(tr);
-    arpLenSel.title='琶音节奏（播放速度）：跟画＝按你画的音符节奏发声（空步不响）；'+
+    arpLenSel.title='琶音器节奏（Rate，播放速度）：跟画＝按你画的音符节奏发声（空步不响）；'+
       '1/16 / 1/8 / 1/4＝按节拍自动滚（每 1 / 2 / 4 格响一次，画没画的格子也会响，画下的音符让位变暗但原样保留，切回跟画即复原）。'+
       '格子时值以本声部「速度」档为基准（速度 1/16 时，1/8 档即每 2 格一音）';
     arpLenSel.addEventListener('change',()=>setArpRate(tr,+arpLenSel.value));
@@ -808,7 +808,7 @@ function buildCard(tr,i){
     ARP_OCTS.forEach(o=>arpOctSel.add(new Option(o+' 八度'+(o>1?'（跨 '+o+' 组）':''),String(o))));
     arpOctSel.value=String(arpOctOf(tr));
     arpOctSel.disabled=!arpOn(tr);
-    arpOctSel.title='琶音八度范围（Octaves）：1＝只在本组八度内循环；2–4＝音池向上叠加同音级行，'+
+    arpOctSel.title='琶音器八度范围（Octaves）：1＝只在本组八度内循环；2–4＝音池向上叠加同音级行，'+
       '琶音跨越多个八度 sweeping（跨度更大、更「经典合成器琶音」）';
     arpOctSel.addEventListener('change',()=>setArpOct(tr,+arpOctSel.value));
     gHar.appendChild(arpOctSel);
@@ -818,7 +818,7 @@ function buildCard(tr,i){
     ARP_GATES.forEach(g=>arpGateSel.add(new Option(ARP_GATE_NAME[g],String(g))));
     arpGateSel.value=String(arpGateOf(tr));
     arpGateSel.disabled=!arpOn(tr);
-    arpGateSel.title='琶音音长（Gate）：每个音持续「一步 × Gate%」——'+
+    arpGateSel.title='琶音器音长（Gate）：每个音持续「一步 × Gate%」——'+
       '25% 短促打击感、50% 适中、75% 饱满、100% 连满无缝（staccato ↔ legato 的手感开关）';
     arpGateSel.addEventListener('change',()=>setArpGate(tr,+arpGateSel.value));
     gHar.appendChild(arpGateSel);
@@ -873,9 +873,9 @@ function refreshSummary(tr){
     if(tr.follow) parts.push('🔗 跟随和弦');
     if(arpOn(tr)){
       const a=tr.arp||{};
-      let ap='🎼 琶音·'+(ARP_MODE_NAME[a.mode]||'上行')+'·'+(ARP_RATE_SHORT[(a.rate)|0]||'跟画');
+      let ap='🎼 琶音器·'+(ARP_MODE_SHORT[a.mode]||'Up')+'·'+(ARP_RATE_SHORT[(a.rate)|0]||'跟画');
       if(arpOctOf(tr)>1) ap+='·'+arpOctOf(tr)+'八度';
-      if(arpGateOf(tr)!==.75) ap+='·门'+ARP_GATE_SHORT[arpGateOf(tr)];
+      if(arpGateOf(tr)!==.75) ap+='·Gate '+ARP_GATE_SHORT[arpGateOf(tr)];
       parts.push(ap);
     }
   }
@@ -1097,8 +1097,8 @@ function refreshStepCell(tr,s){
   const fireOK=!arp||arpFires(tr,s);                    // 自动节奏档：没画的格也按拍触发
   const fr=(r!==-1||fireOK)?followRow(tr,s):-1;
   const shifted=(fr!==r&&fr!==-1);
-  const ghostTag=arp?'🎼 琶音 → 实际发 ':'🔗 跟随和弦 → 实际发 ';
-  const ghostFull=arp?'琶音图案生成的实际发声音高 ':'跟随和弦后的实际发声音高 ';
+  const ghostTag=arp?'🎼 琶音器 → 实际发 ':'🔗 跟随和弦 → 实际发 ';
+  const ghostFull=arp?'琶音器图案生成的实际发声音高 ':'跟随和弦后的实际发声音高 ';
   for(let i=0;i<col.length;i++){
     const cell=col[i]; if(!cell) continue;
     cell.classList.toggle('on',i===r);

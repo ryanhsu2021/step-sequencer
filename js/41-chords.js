@@ -244,7 +244,7 @@ function reharmonizeTrack(tr){
   }
   return changed;
 }
-/* ============ 琶音模式（ARP，非破坏性） ============
+/* ============ 琶音器（ARP = Arpeggiator，非破坏性） ============
    与「跟随和弦」同一套哲学：网格上画的 step 位置永不改动。
    「节奏」档控制**播放速度**——琶音按所选密度从当前和弦的音池里自动滚出
    （followRow 优先走 arpRow，因此播放 / 试听 / MIDI 导出 / 网格幽灵标记自动全部生效）。
@@ -258,7 +258,10 @@ function reharmonizeTrack(tr){
      · 图案：up 上行 / down 下行 / updown 上下（端点不重复）/ random 随机（确定性伪随机，预览一致）
    纯函数：不写任何持久状态，调度热路径可安全反复调用。 */
 const ARP_MODE_IDS=['up','down','updown','random'];
-const ARP_MODE_NAME={up:'上行',down:'下行',updown:'上下',random:'随机'};
+/* 图案名：经典 ARP 硬件（Jupiter-8 / Ableton 等）的通用写法——双语标注，专业且可读 */
+const ARP_MODE_NAME={up:'上行 Up',down:'下行 Down',updown:'上下 Up-Down',random:'随机 Random'};
+/* 摘要用短名：空间有限，只留英文模式名（行业惯例） */
+const ARP_MODE_SHORT={up:'Up',down:'Down',updown:'Up-Down',random:'Rnd'};
 /* 琶音节奏档（播放速度）：0 跟画（画了才响）/ 1·2·4＝每 1·2·4 格一音（以声部「速度」档的格子
    为基准，速度 1/16 时即 1/16 · 1/8 · 1/4——经典合成器琶音的「按拍自动滚」）。
    自动档下画的音符暂时让位（原样保留，切回跟画即复原），音高始终实时取自当前和弦。 */
@@ -329,15 +332,15 @@ function arpRow(tr,s){
   else idx=k%n;                                       // up 上行
   return pool[idx];
 }
-/* 「琶音」开关：开启后按「节奏」档发声（音序数据不动，关掉立即复原） */
+/* 「琶音器」开关：开启后按「节奏」档发声（音序数据不动，关掉立即复原） */
 function toggleArp(tr){
   if(!tr||tr.kind!=='inst') return;
   if(!tr.arp) tr.arp={on:false,mode:'up',rate:0,oct:1,gate:.75};
   tr.arp.on=!tr.arp.on;
   renderTracks(); save();
   toast(tr.arp.on
-    ?('🎼 「'+tr.name+'」琶音模式：已开启——节奏「'+(ARP_RATE_NAME[tr.arp.rate]||'跟画')+'」，音高按「'+(ARP_MODE_NAME[tr.arp.mode]||'上行')+'」从当前和弦自动生成（关掉立即复原）')
-    :('🎼 「'+tr.name+'」琶音模式：已关闭（音高恢复为你画的原样）'));
+    ?('🎼 「'+tr.name+'」琶音器：已开启——节奏「'+(ARP_RATE_NAME[tr.arp.rate]||'跟画')+'」，音高按「'+(ARP_MODE_NAME[tr.arp.mode]||'上行 Up')+'」从当前和弦自动生成（关掉立即复原）')
+    :('🎼 「'+tr.name+'」琶音器：已关闭（音高恢复为你画的原样）'));
 }
 /* 琶音图案：up / down / updown / random（开关开着才重画幽灵标记） */
 function setArpMode(tr,m){
@@ -349,7 +352,7 @@ function setArpMode(tr,m){
     if(card&&card.kind==='inst'){ refreshAllSteps(tr); refreshSummary(tr); }   // 摘要行的图案名也要跟上
   }
   save();
-  toast('🎼 「'+tr.name+'」琶音图案 → '+(ARP_MODE_NAME[tr.arp.mode]||'上行')+(tr.arp.on?'':'（琶音开关目前是关的）'));
+  toast('🎼 「'+tr.name+'」琶音器图案 → '+(ARP_MODE_NAME[tr.arp.mode]||'上行 Up')+(tr.arp.on?'':'（琶音器目前是关的）'));
 }
 /* 琶音节奏（播放速度）：0 跟画 / 1·2·4 每格·每 2 格·每 4 格（以「速度」档的格子为基准）。
    自动档下画的音符让位给节拍滚 */
@@ -391,8 +394,8 @@ function setArpGate(tr,g){
     if(card&&card.kind==='inst'){ refreshSummary(tr); }   // 网格标记不受 Gate 影响，摘要跟一下即可
   }
   save();
-  toast('🎼 「'+tr.name+'」琶音音长（Gate）→ '+(ARP_GATE_NAME[tr.arp.gate]||'75% · 饱满')
-    +(tr.arp.on?'':'（琶音开关目前是关的）'));
+  toast('🎼 「'+tr.name+'」琶音器音长（Gate）→ '+(ARP_GATE_NAME[tr.arp.gate]||'75% · 饱满')
+    +(tr.arp.on?'':'（琶音器目前是关的）'));
 }
 /* 和弦轨变化后：跟随声部的音高由 followRow 在播放时实时折算，琶音声部的音池也随和弦实时变化，
    这里只需重画面板提示。返回是否有跟随 / 琶音声部（用于 toast 判断）。 */
