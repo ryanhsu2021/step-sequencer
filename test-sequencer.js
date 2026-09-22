@@ -199,7 +199,7 @@ const expose=`
   setChordFxMix,isPlayingGetter:()=>isPlaying,shortInst,
   cardOf:id=>view.cards.get(id),
   seedDefault,
-  toggleInfinite,evolveOnce,infBarTick,evolveInst,evolveDrum,infTargets,INF_ROLES,
+  toggleInfinite,evolveOnce,infBarTick,evolveInst,evolveDrum,evolveMelody,infMelody,infTargets,INF_ROLES,
   infOn:()=>infOn,infWinGetter:()=>infNext,infCount:()=>infCount,infWin:()=>[1,6],
   analyzeMelody,preferProg,mkChord,setProg,progBars,progBeats,chordFramesAt,inChord:null};`;
 try{ vm.runInContext(js+expose,sandbox); }catch(e){ console.log('LOAD_FAIL:',e.stack); process.exit(1); }
@@ -1644,7 +1644,8 @@ nmInput.value='我的主旋律'; nmInput.fire('input');
 chk('手输改名照常工作（与下拉互不干扰）',nm.name==='我的主旋律');
 
 /* ============================================================
-   23. ♾ 无限演化：每 1–6 小节微调伴奏音序（杂交式、不突兀）
+   23. ♾ 无限演化：每 1–6 小节微调音序（杂交式、不突兀）
+       主旋律 = 和声内变奏（节奏不动、只改音）；和弦轨与音色不变
    ============================================================ */
 console.log('\n--- 23. 无限演化（♾ 演化按钮） ---');
 /* 干净环境：重建示例曲（主旋律 + 贝斯 + 琶音器 + 鼓组[+ 铺底]），固定和弦轨 */
@@ -1659,11 +1660,12 @@ const inst23=acc23.filter(t=>t.kind==='inst').map(t=>t.inst);
 const progSnap23=JSON.stringify(T.progFor());
 chk('前置：示例曲有 '+(acc23.length)+' 条伴奏声部可供演化',acc23.length>=3,
     'names='+acc23.map(t=>t.name).join(','));
-/* ---- 开关前置检查：无伴奏声部时拒绝开启 ---- */
+chk('前置：主旋律被识别为演化对象',T.infMelody()===mel23);
+/* ---- 开关前置检查：既无伴奏也无有音的旋律时拒绝开启 ---- */
 const keepTracks=T.state.tracks;
-T.state.tracks=[mel23];
+T.state.tracks=[];                                  // 空工程：主旋律、伴奏都没有
 T.toggleInfinite();
-chk('没有任何编配伴奏声部 → 拒绝开启（infOn 仍为 false）',T.infOn()===false);
+chk('空工程（无主旋律无伴奏）→ 拒绝开启（infOn 仍为 false）',T.infOn()===false);
 T.state.tracks=keepTracks;
 /* ---- 开启：快照 + 状态 + 按钮 ---- */
 const undoBefore=T.undoDepth();
@@ -1673,11 +1675,32 @@ chk('开启：infOn=true、按钮点亮、undo+1（开启前快照可整体回�
 /* ---- 窗口：1–6 小节 ---- */
 const wOK=[]; for(let i=0;i<40;i++){ /* evolveOnce 内部 infWin 不直接暴露——用 infBarTick 计数间接验证 */ wOK.push(true); }
 chk('演化窗口常量 = [1,6] 小节',T.infWin()[0]===1&&T.infWin()[1]===6);
-/* ---- evolveOnce：主旋律不动、伴奏微变、和弦内音 ---- */
+/* ---- evolveOnce：主旋律变奏（节奏不动）、伴奏微变、和弦轨不变 ---- */
 const before23=acc23.map(t=>t.kind==='drum'?JSON.stringify(t.p):snap(t));
 const bars23=T.barsOf(acc23[0]);
+const melBefore23=mel23.seq.slice();
 T.evolveOnce();
-chk('主旋律一字不改（演化只动伴奏）',snap(mel23)===melSnap23);
+/* 旋律：允许改音，但节奏骨架（哪些步有音）必须一字不动 */
+const melRhyB=melBefore23.map(v=>v<0?'-':'+').join('');
+const melRhyA=mel23.seq.map(v=>v<0?'-':'+').join('');
+chk('主旋律节奏骨架一字不动（和声内变奏只改音）',melRhyB===melRhyA);
+let melChanged=snap(mel23)!==melSnap23;             // 单次演化有小概率全部保留——重试几次
+for(let i=0;i<5&&!melChanged;i++){ T.evolveMelody(mel23,T.progFor()); melChanged=snap(mel23)!==melSnap23; }
+chk('主旋律确实参与了演化（音高有变化）',melChanged);
+/* 旋律改动不越出自身音区（min/max 行） */
+let loM=-1,hiM=-1;
+for(const r of melBefore23) if(r>=0){ if(loM<0||r<loM)loM=r; if(hiM<0||r>hiM)hiM=r; }
+let inRange=true;
+for(let s=0;s<T.stepsOf(mel23);s++){ const r=mel23.seq[s]; if(r>=0&&(r<loM||r>hiM)) inRange=false; }
+chk('主旋律变奏不越出自身音区（min='+loM+'..max='+hiM+' 行）',inRange);
+/* 旋律改动只变 1–2 个小节（杂交式） */
+let mDiffBars=0;
+for(let b=0;b<T.barsOf(mel23);b++){
+  for(let s=b*16;s<(b+1)*16&&s<melBefore23.length;s++){
+    if(melBefore23[s]!==mel23.seq[s]){ mDiffBars++; break; }
+  }
+}
+chk('主旋律每次演化只动 1–2 个小节',mDiffBars>=0&&mDiffBars<=2,'bars='+mDiffBars);
 chk('和弦轨一字不改',JSON.stringify(T.progFor())===progSnap23);
 let diffBars=0;
 const bass23=acc23.find(t=>t.name==='贝斯');
