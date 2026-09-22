@@ -164,9 +164,9 @@ function buildProgPresetRow(){
       const key=norm.filter((d,i)=>i===0||norm[i-1]!==d).join('-');   // 与 progKeyOf 同一套指纹
       if(seen.has(key)) return;                      // 风格库与调式库重复的走向只留一条
       seen.add(key);
-      const o=new Option(norm.map(d=>ROMAN[d]||'').join(' – ')
+      const o=new Option(norm.map(d=>romanOf(d)).join(' – ')
         +(progNick(key)?' · '+progNick(key):''),key);
-      o.title=g.label+'：'+norm.map(d=>ROMAN[d]||'').join(' – ')
+      o.title=g.label+'：'+norm.map(d=>romanOf(d)).join(' – ')
         +(progNick(key)?'（'+progNick(key)+'）':'');
       og.appendChild(o);
     });

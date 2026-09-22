@@ -7,6 +7,26 @@
    🎹 和弦进行轨：全曲和声的单一来源（2 小节 × 每 8 步一个和弦）
    ============================================================ */
 const ROMAN=['I','II','III','IV','V','VI','VII','VIII'];
+/* 专业的罗马数字标注：
+   · 大小写表三和弦性质——大/增 = 大写，小 = 小写，减 = 小写 + °
+   · 变音记号相对大调音级——自然小调的 III/VI/VII 标作 bIII/bVI/bVII，
+     Dorian 的 IV、Mixolydian 的 bVII 等调式色彩一目了然
+   · 五声等非七声调式不是三度叠置结构和声，保持纯大写（原行为） */
+function romanOf(deg){
+  const L=scLen(), d=((deg%L)+L)%L;
+  if(L<7) return ROMAN[d]||String(d+1);
+  const iv=ivOf(), MAJ=[0,2,4,5,7,9,11];
+  const semi=((iv[d]%12)+12)%12;
+  const diff=((semi-MAJ[d])%12+12)%12;
+  const alt=diff===11?'b':(diff===1?'#':'');
+  const third=((iv[(d+2)%7]-iv[d])%12+12)%12;
+  const fifth=((iv[(d+4)%7]-iv[d])%12+12)%12;
+  let r=ROMAN[d]||'';
+  if(third===3) r=r.toLowerCase()+(fifth===6?'°':'');
+  else if(third===4) r=r+(fifth===8?'+':'');
+  else return alt+r;                                // sus / 无三音：只标变音
+  return alt+r;
+}
 /* 著名进行的俗名：键 = progKeyOf 指纹（去相邻同根后的级数链）。
    下拉选项在罗马数字后附注俗名，专业做谱人一眼能认出这条走向是什么。
    级数数字按 1 起数（1=I）；「b7」表示小调借来的降七级。 */
@@ -88,7 +108,7 @@ function chordLabel(ch){
   else if(th===2) q='sus2';
   else q='5';
   if(ch.tones.length>3&&q!=='°'&&q!=='ø') q+='7';
-  return {name:ROOT_NAMES[pc]+q,deg:ROMAN[ch.root]||'',tones:ch.tones.map(d=>ROOT_NAMES[((rootIdx+iv[d])%12+12)%12])};
+  return {name:ROOT_NAMES[pc]+q,deg:romanOf(ch.root),tones:ch.tones.map(d=>ROOT_NAMES[((rootIdx+iv[d])%12+12)%12])};
 }
 /* 所有声部（除鼓）统一用和弦进行轨做和声（✨/🎼/编配）。「对齐和弦」按钮是手动一次性触发 */
 function progFor(){
@@ -201,9 +221,8 @@ function progKeyOf(p){
 }
 /* 级数链 → 罗马数字（"I – V – VI – IV"），用于预设名与「当前」回显 */
 function planRoman(p){
-  const L=scLen();
   return (Array.isArray(p)?p:[])
-    .map(c=>ROMAN[((((c&&c.root)||0)%L)+L)%L]||'')
+    .map(c=>romanOf((c&&c.root)||0))
     .join(' – ');
 }
 /* ============ 跟随和弦（非破坏性） ============

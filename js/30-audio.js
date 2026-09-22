@@ -440,6 +440,50 @@ const VOICE={
     g.gain.exponentialRampToValueAtTime(.0001,t+dur*1.2);
     o.connect(g); g.connect(dest); o.start(t); o.stop(t+dur*1.3);
   },
+  /* ---- 模拟合成器系列 ---- */
+  retrokeys(f,t,dest,vel,dur){
+    /* 复古合成键（PWM 键盘味）：双脉冲+锯齿微失谐的暖键感，短音键感、轻颤音 */
+    sustainOsc(f,t,dest,{types:['square','square','sawtooth'],mix:1.2,attack:.008,
+      dur:Math.max(.25,dur*.9),peak:.17*vel,sus:.6,cutoff:2900,release:.2,
+      lfo:{rate:4.8,depth:.005}});
+  },
+  analogbass(f,t,dest,vel,dur){
+    /* 模拟低音（Minimoog 味）：双锯齿 + 低八度正弦 sub，共振低通快速收口，起音有力 */
+    dur=Math.max(.12,dur);
+    const fl=audioCtx.createBiquadFilter(); fl.type='lowpass'; fl.Q.value=6;
+    fl.frequency.setValueAtTime(Math.min(2600,f*9),t);
+    fl.frequency.exponentialRampToValueAtTime(Math.max(140,f*2.2),t+.09);
+    const g=audioCtx.createGain();
+    g.gain.setValueAtTime(.0001,t);
+    g.gain.linearRampToValueAtTime(.3*vel,t+.006);
+    g.gain.setValueAtTime(.3*vel,t+Math.max(.08,dur*.6));
+    g.gain.exponentialRampToValueAtTime(.0001,t+dur*1.05);
+    for(const det of [0,-6]){
+      const o=audioCtx.createOscillator(); o.type='sawtooth'; o.frequency.value=f; o.detune.value=det;
+      const og=audioCtx.createGain(); og.gain.value=.5;
+      o.connect(og); og.connect(fl); o.start(t); o.stop(t+dur*1.1);
+    }
+    fl.connect(g); g.connect(dest);
+    const s=audioCtx.createOscillator(); s.type='sine'; s.frequency.value=f/2;
+    const sg=audioCtx.createGain();
+    sg.gain.setValueAtTime(.2*vel,t);
+    sg.gain.exponentialRampToValueAtTime(.0001,t+dur*1.4);
+    s.connect(sg); sg.connect(dest); s.start(t); s.stop(t+dur*1.5);
+  },
+  ensemble(f,t,dest,vel,dur){
+    /* 模拟合奏（弦乐合奏机味）：三锯齿宽失谐 + 慢合唱 LFO，比弦乐群更宽更「电路感」 */
+    sustainOsc(f,t,dest,{types:['sawtooth','sawtooth','sawtooth'],mix:2,attack:.3,
+      dur:dur*1.2,peak:.16*vel,sus:.88,cutoff:2600,release:.7,lfo:{rate:1.1,depth:.02}});
+    sustainOsc(f*1.005,t,dest,{types:['sawtooth'],attack:.32,dur:dur*1.2,
+      peak:.08*vel,sus:.85,cutoff:2400,release:.7});
+  },
+  pwmlead(f,t,dest,vel,dur){
+    /* PWM 主音：双脉冲微失谐的「会呼吸」主音，颤音衬底 + 低八度方波托住 */
+    sustainOsc(f,t,dest,{types:['square','square'],mix:1.6,attack:.015,dur,
+      peak:.16*vel,sus:.8,cutoff:4200,release:.2,lfo:{rate:5.3,depth:.008}});
+    sustainOsc(f/2,t,dest,{types:['square'],attack:.02,dur:dur*.9,
+      peak:.05*vel,sus:.6,cutoff:1800,release:.15});
+  },
 };
 function noteDurOf(tr){
   /* 非琶音：1.9 步自然衰减（重叠的拨弦手感）；

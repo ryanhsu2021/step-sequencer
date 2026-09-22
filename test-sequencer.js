@@ -187,6 +187,7 @@ const expose=`
   DELAY_PRESETS,REV_PRESETS,setTrackFx,setReverb,revGetter:()=>revPreset,trackFx:t=>t.fx,setRevMix:v=>{revMix=v;},getRevMix:()=>revMix,
   setChordFx,applyChordFx,chordFxGetter:()=>chordFx,getChordFxMix:()=>chordFxMix,setChordFxMix,chordBusId:CHORD_BUS_ID,
   planToChords,setProgPlan,progKeyOf,planRoman,modeIdx:()=>modeIdx,PLAN_LIB,PROG_PLANS,PROG_NICKS,STYLE,STYLES,ROMAN,
+  romanOf,INSTRUMENTS,VOICE,
   rateOf,rateName,spanOf,setRate,loopSteps,RATE_VALUES,
   toggleOpen,toggleFollow,isFollowing,applyFollow,syncFollowers,openId:()=>openTrackId,followOf:t=>!!t.follow,
   toggleArp,setArpMode,setArpRate,setArpOct,setArpGate,arpRow,arpPoolAt,arpHitIdx,arpOn,arpFires,
@@ -627,9 +628,31 @@ chk('setProgPlan：整条替换 & 标记为手动',T.state.progEdited===true&&T.
     T.state.prog.map(c=>c.root).join('-'));
 chk('setProgPlan：拍数铺满和弦轨',T.state.prog.reduce((a,c)=>a+c.beats,0)===T.progBeats());
 chk('应用后指纹与预设一致（下拉可回显）',T.progKeyOf(T.state.prog)==='0-4-5-3');
-chk('planRoman：0-4-5-3 → I – V – VI – IV',
-    T.planRoman([{root:0},{root:4},{root:5},{root:3}]).replace(/\s/g,'')==='I–V–VI–IV',
+chk('planRoman：0-4-5-3 → I – V – vi – IV（专业大小写）',
+    T.planRoman([{root:0},{root:4},{root:5},{root:3}]).replace(/\s/g,'')==='I–V–vi–IV',
     T.planRoman([{root:0},{root:4},{root:5},{root:3}]));
+/* 罗马数字专业化：三和弦性质大小写 + 调式变音记号 */
+chk('romanOf：大调 I / V 大写、vi 小写、vii° 减',
+    T.romanOf(0)==='I'&&T.romanOf(4)==='V'&&T.romanOf(5)==='vi'&&T.romanOf(6)==='vii°',
+    [T.romanOf(0),T.romanOf(4),T.romanOf(5),T.romanOf(6)].join(','));
+T.setMode(1);                                       // 自然小调
+chk('romanOf：自然小调 i / bIII / bVI / bVII',
+    T.romanOf(0)==='i'&&T.romanOf(2)==='bIII'&&T.romanOf(5)==='bVI'&&T.romanOf(6)==='bVII',
+    [T.romanOf(0),T.romanOf(2),T.romanOf(5),T.romanOf(6)].join(','));
+chk('planRoman：自然小调 1637 → i – bVI – bIII – bVII',
+    T.planRoman([{root:0},{root:5},{root:2},{root:6}]).replace(/\s/g,'')==='i–bVI–bIII–bVII',
+    T.planRoman([{root:0},{root:5},{root:2},{root:6}]));
+T.setMode(0);
+/* 模拟合成器音色：定义齐全（INSTRUMENTS）+ 合成器实现存在（VOICE）+ 进了风格库 */
+{ const ids=['retrokeys','analogbass','ensemble','pwmlead'];
+  chk('模拟合成器音色：INSTRUMENTS 定义齐全且分组正确',
+      ids.every(id=>{ const i=T.INSTRUMENTS.find(x=>x.id===id);
+        return i&&(i.group==='键盘'||i.group==='贝斯'||i.group==='氛围'||i.group==='合成'); }),
+      ids.map(id=>!!T.INSTRUMENTS.find(x=>x.id===id)).join(','));
+  chk('模拟合成器音色：VOICE 合成实现存在',ids.every(id=>typeof T.VOICE[id]==='function'));
+  chk('模拟合成器音色：电子/嘻哈/Trap 的贝斯池已接入 analogbass',
+      [2,4,5].every(k=>T.STYLES[k].bassI.indexOf('analogbass')>=0));
+}
 
 let planOK=true, planDetail='';
 Object.keys(T.PROG_PLANS).forEach(k=>{
