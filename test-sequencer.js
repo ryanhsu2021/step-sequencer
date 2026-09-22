@@ -57,7 +57,16 @@ class El{
     }
     this._value=s;
   }
-  appendChild(c){ this.children.push(c); return c; }
+  appendChild(c){
+    this.children.push(c);
+    /* 真浏览器语义：select.appendChild(optgroup) 后，optgroup 里的 option 出现在 select.options 里——
+       「常用声部名」下拉按 optgroup 分组，测试要能从 select.options 摸到它们 */
+    if(this.tagName==='OPTGROUP'&&c&&c.tagName==='OPTION'){ (this.options=this.options||[]).push(c); }
+    if(c&&c.tagName==='OPTGROUP'&&Array.isArray(c.options)&&this.tagName==='SELECT'){
+      for(const o of c.options.slice()) this.add(o);
+    }
+    return c;
+  }
   insertBefore(c,ref){ const i=ref?this.children.indexOf(ref):-1; if(i<0) this.children.push(c); else this.children.splice(i,0,c); return c; }
   removeChild(c){ const i=this.children.indexOf(c); if(i>=0) this.children.splice(i,1); return c; }
   append(...cs){ cs.forEach(c=>this.children.push(c)); }
@@ -161,7 +170,7 @@ const sandbox={
   navigator:{},
   performance:{now:()=>Date.now()},
   requestAnimationFrame:()=>0,
-  Option:class{constructor(text,value){this.text=text;this.value=String(value);this.disabled=false;}},
+  Option:class{constructor(text,value){this.tagName='OPTION';this.children=[];this.text=text;this.value=String(value);this.disabled=false;}},
   URL:{createObjectURL:()=>'blob:test',revokeObjectURL(){}},
   Blob:class{constructor(parts){this.parts=parts;(globalThis.__blobs=globalThis.__blobs||[]).push(parts);}},
   setTimeout:(fn)=>{fn();return 1;}, clearTimeout(){}, setInterval:()=>1, clearInterval(){},
@@ -1592,6 +1601,41 @@ T.setArpGate(ra,.75);
 T.setArpRate(ra,0); T.exportMidi();
 const evCount=midiSpans(myMidi()).length;
 chk('MIDI：跟画档只有画的 3 个 step 发声，空步无音符',evCount===3,'n='+evCount);
+
+console.log('\n--- 22. 常用声部名下拉（▾ 预设命名，免手输） ---');
+/* 旋律声部：四组常用名（旋律/和声/低音/节奏） */
+T.renderTracks();
+const nm=T.state.tracks.find(t=>t.kind==='inst');
+const nmCard=T.cardOf(nm.id);
+const nSel=nmCard&&nmCard.el.querySelector('select.tc-name-pick');
+chk('常用名下拉存在、占位为 ▾',!!nSel&&nSel.options.length>=1&&nSel.options[0].text==='▾'&&nSel.value==='');
+chk('旋律声部下拉分 4 组（旋律/和声/低音/节奏）',
+    !!nSel&&nSel.querySelectorAll('optgroup').length===4
+      &&Array.from(nSel.querySelectorAll('optgroup')).map(g=>g.label).join('/')==='旋律/和声/低音/节奏',
+    'groups='+Array.from(nSel?nSel.querySelectorAll('optgroup'):[]).map(g=>g.label));
+const nameBefore=nm.name;
+nSel.value='琶音'; nSel.fire('change');
+chk('选中「琶音」→ tr.name 改名、输入框同步、下拉回落 ▾',
+    nm.name==='琶音'&&nmCard.el.querySelector('.tc-name').value==='琶音'&&nSel.value==='',
+    'name='+nm.name+' sel='+nSel.value);
+chk('改名后已存档',JSON.parse(localStorage.getItem('polyseq.v7')||'{}').tracks.some(t=>t.name==='琶音'));
+nm.name=nameBefore; T.save();                       // 还原，避免影响后续读取
+/* 鼓声部：只有节奏组（鼓组/律动/打击） */
+const dm=T.makeTrack('drum','d0','pop',0);
+T.state.tracks.push(dm); T.renderTracks();
+const dSel=T.cardOf(dm.id)&&T.cardOf(dm.id).el.querySelector('select.tc-name-pick');
+chk('鼓声部下拉只有 1 组且含 鼓组/律动/打击',
+    !!dSel&&dSel.querySelectorAll('optgroup').length===1
+      &&['鼓组','律动','打击'].every(n=>Array.from(dSel.options).some(o=>o.value===n)),
+    'opts='+Array.from(dSel?dSel.options:[]).map(o=>o.value).join(','));
+const dOpt=Array.from(dSel.options).find(o=>o.value==='鼓组');
+chk('鼓组选项确实在 select.options 中（optgroup 合并进来了）',!!dOpt);
+dSel.value='鼓组'; dSel.fire('change');
+chk('鼓声部选中「鼓组」→ 改名生效',dm.name==='鼓组','name='+dm.name);
+/* 手输改名不受影响（下拉只是叠加入口） */
+const nmInput=T.cardOf(nm.id).el.querySelector('.tc-name');
+nmInput.value='我的主旋律'; nmInput.fire('input');
+chk('手输改名照常工作（与下拉互不干扰）',nm.name==='我的主旋律');
 
 console.log('\n=== '+(fail?fail+' 项失败':'全部通过')+'（'+pass+' 通过 / '+fail+' 失败）===');
 process.exit(fail?1:0);

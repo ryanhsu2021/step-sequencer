@@ -634,6 +634,7 @@ function buildCard(tr,i){
       (isOpen?'收起音序面板':'展开音序面板')+'"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2.5 L8 6 L4 9.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></button>'+
     '<span class="tc-num">'+(i+1)+'</span>'+
     '<input class="tc-name" maxlength="14" spellcheck="false">'+
+    '<select class="tc-name-pick" title="常用声部名：点开直接选一个（鼓组 · 琶音 · 贝斯 · 铺底……），不用手动输入；仍可自由改名"></select>'+
     '<span class="tc-sub"></span><span class="spacer"></span>'+
     '<div class="tc-btns">'+
       '<span class="tb-group">'+
@@ -660,6 +661,27 @@ function buildCard(tr,i){
     '</div>';
   const name=head.querySelector('.tc-name'); name.value=tr.name;
   name.addEventListener('input',()=>{tr.name=name.value||'声部';head.querySelector('.tc-sub').textContent=trackDesc(tr);save();});
+  /* 「常用名」下拉：按声部类型给一组常用名称，选中即改名（手输不受影响，选完弹回落回 ▾）。
+     与 ✨ 编配的命名口径一致（贝斯 / 琶音 Arp / 铺底 / 鼓组），保持全站词汇统一 */
+  const namePick=head.querySelector('.tc-name-pick');
+  const NAME_PRESETS_DRUM=['鼓组','律动','打击'];
+  const NAME_PRESETS_INST=[['旋律',['主旋律','副旋律','华彩','呼应']],['和声',['琶音','琶音 Arp','铺底','和声']],['低音',['贝斯','低音']],['节奏',['切分柱式','分解和弦']]];
+  namePick.add(new Option('▾',''));
+  (tr.kind==='drum'
+    ?[['节奏',NAME_PRESETS_DRUM]]
+    :NAME_PRESETS_INST
+  ).forEach(g=>{
+    const og=document.createElement('optgroup'); og.label=g[0];
+    g[1].forEach(n=>og.appendChild(new Option(n,n)));   // optgroup 没有 .add()，只能 appendChild
+    namePick.appendChild(og);
+  });
+  namePick.addEventListener('change',()=>{
+    const v=namePick.value; namePick.value='';
+    if(!v||v===tr.name) return;
+    tr.name=v; name.value=v;
+    head.querySelector('.tc-sub').textContent=trackDesc(tr);
+    save(); toast('🏷 声部已改名「'+v+'」');
+  });
   head.querySelectorAll('button[data-act]').forEach(b=>b.addEventListener('click',()=>{
     const a=b.dataset.act;
     if(a==='fold') toggleOpen(tr);

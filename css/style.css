@@ -243,6 +243,13 @@ input[type=range]:hover::-webkit-slider-thumb{transform:scale(1.15)}
 }
 .tc-name:hover{border-bottom-color:rgba(20,20,20,.22)}
 .tc-name:focus{border-bottom-color:currentColor}
+/* 常用声部名下拉：收起时只显示一个 ▾，点开才是分组菜单 */
+.tc-name-pick{
+  flex:none;width:2.1em;font:inherit;font-size:13px;color:var(--tci);cursor:pointer;
+  background:transparent;border:1px solid rgba(20,20,20,.16);border-radius:7px;
+  padding:1px 1px 1px 5px;outline:none;text-align:center;opacity:.62;
+}
+.tc-name-pick:hover,.tc-name-pick:focus{opacity:1;border-color:rgba(20,20,20,.4)}
 .tc-sub{font-size:11.5px;color:color-mix(in srgb,var(--tci) 55%,transparent);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:0 1 auto}
 .spacer{flex:1}
 /* 头部按钮（DAW 式编排）：混音 M/S · 生成 ✨🎲 · 排序 ↑↓ · 危险 ⌫✕ 四组，组间细分隔线 */
