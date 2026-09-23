@@ -11,7 +11,8 @@
         从旋律反推一条和声（比纯风格随机更贴合实听），并写明推导来源。
      3. 三声部各司其职（对位 + 音域避让）：
           贝斯  ＝ 和声地基：强拍锚在和弦根音，旋律长音/句尾处补五音/三音走动
-          琶音  ＝ 织体层：跟着旋律的音域走向上下、句尾让位留呼吸，绝不与贝斯撞区
+          琶音  ＝ 织体层：绝不与贝斯撞区；**生成后立刻开启 ARP**（见第 6b 节），
+                  本节的生成器负责「节奏栅格 + 呼吸」，音高交给琶音器实时从和弦生成
           铺底  ＝ 长音层：只落在和弦骨架音，躲在贝斯之上、旋律之下
    ============================================================ */
 /* ---------- 通用小工具 ---------- */
@@ -474,6 +475,31 @@ function pickMelodyTrack(){
   };
   return insts.slice().sort((a,b)=>score(b)-score(a)||(barsOf(b)-barsOf(a)))[0];
 }
+/* ============ 6b. 琶音器声部的 ARP 配置（编配产物的语义一致性） ============
+   一键编配产出的声部叫「琶音器」，那它就**必须是一个真正的琶音器**——否则名字与
+   行为不符：用户看到的是一条普通声部（「琶音器」开关是灭的、音高照你画的响），
+   而示例曲里的同名声部却是开着的，两处同名不同义。
+
+   为什么开着比关掉更好听（而不是为了「语义正确」而牺牲听感）：
+     ① **永远协和、自动跟随**：ARP 的音高实时取自上方和弦进行轨
+        （arpPoolAt → state.prog），所以换和弦、挑级数、换常用走向、⤵ 从旋律推导、
+        🎲 随机同风格之后，琶音立刻就跟着变且必然是和弦内音；而一条写死的音高线
+        在改和弦之后就会开始撞音（这是关掉 ARP 时最实际的听感损失）。
+     ② **分工更清楚**：编配生成器擅长的是「节奏栅格 + 呼吸」——强拍落在哪、
+        换气点留白、密度跟着旋律让位；这些全部保留（ARP 节拍照样走 seq≥0 的格子）。
+        音高这种「按和弦自动算」的活儿交给琶音器，比写死一条线更贴合织体层的角色。
+     ③ **八度铺开**：ARP 音池能向上叠同音级行（Octaves），跨两个八度 sweeping——
+        这正是经典琶音的标志性格局（写死的音序困在单组八度里打转，味道就少一半）。
+     节奏档固定在「跟画」：只在你编配出的那些格子上发声。这样编配算出来的
+     句尾留白 / 换气不会被自动滚的密音盖掉（1/16 自动档在没画音的格子也按拍触发，
+     会与旋律抢节奏），而且无限演化改这条声部的音序时，听感上也真的会变。
+     音序里的音高**照旧写下来**——关掉 ARP 就立刻回到这条写好的织体线（非破坏性）。 */
+const ARR_ARP_OCT=2;                       // 音池跨 2 个八度（经典 sweep 手感，与示例曲一致）
+/* 该风格偏好哪个图案（up / updown / down / random，见 03-styles 的 arpModes） */
+const arrangeArpMode=()=>arrPick(SP_.arpModes||['up']);
+function applyArpCfg(t){
+  t.arp={on:true,mode:arrangeArpMode(),rate:0,oct:ARR_ARP_OCT,gate:.75};
+}
 function autoArrange(){
   const mel=pickMelodyTrack();
   if(!mel||!mel.seq.some(v=>v>=0)){ toast('请先在某个声部摆上几个音，再点一键编配'); return; }
@@ -487,13 +513,18 @@ function autoArrange(){
   const M=analyzeMelody(mel,frames);
   const roles=[
     {name:'贝斯',inst:arrPick(SP_.bassI||['bass']),oct:ARR_LAYER.bass.oct,fill:fillBass},
-    {name:'琶音器',inst:arrPick(SP_.chordI||['pluck','epiano','marimba']),oct:ARR_LAYER.arp.oct,fill:fillArp},
+    /* arp:true → 生成完立刻开 ARP（见 6b）：音高交给琶音器实时跟随和弦，音序只当节奏栅格 */
+    {name:'琶音器',inst:arrPick(SP_.chordI||['pluck','epiano','marimba']),oct:ARR_LAYER.arp.oct,fill:fillArp,arp:true},
   ];
   if(SP_.padRole) roles.push({name:'铺底',inst:arrPick(['pad','strings','choir','cello','organ']),oct:ARR_LAYER.pad.oct,fill:fillPad});
   const made=[];
   for(const role of roles){
     const t=ensureFreeVoice(role,mel);
-    if(t){ role.fill(t,M,prog); made.push(t.name+'('+barsOf(t)+'小节)'); }
+    if(!t) continue;
+    role.fill(t,M,prog);                          // 先写下织体线：关掉 ARP 就回到这一版
+    if(role.arp) applyArpCfg(t);                  // 「琶音器」声部当场开 ARP（名实相符）
+    made.push(t.name+'('+barsOf(t)+'小节'
+      +(role.arp?'·ARP '+ARP_MODE_SHORT[t.arp.mode]:'')+')');
   }
   const d=ensureDrum();
   renderTracks();

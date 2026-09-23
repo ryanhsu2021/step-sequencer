@@ -192,7 +192,8 @@ const expose=`
   toggleOpen,toggleFollow,isFollowing,applyFollow,syncFollowers,openId:()=>openTrackId,followOf:t=>!!t.follow,
   toggleArp,setArpMode,setArpRate,setArpOct,setArpGate,arpRow,arpPoolAt,arpHitIdx,arpOn,arpFires,
   noteDurOf,bpmGetter:()=>bpm,arpOctOf,arpGateOf,
-  ARP_MODE_NAME,ARP_RATE_NAME,ARP_RATE_SHORT,ARP_RATES,ARP_OCTS,ARP_GATES,ARP_GATE_SHORT,
+  ARP_MODE_NAME,ARP_MODE_IDS,ARP_RATE_NAME,ARP_RATE_SHORT,ARP_RATES,ARP_OCTS,ARP_GATES,ARP_GATE_SHORT,
+  applyArpCfg,arrangeArpMode,ARR_ARP_OCT,
   setMode:v=>{modeIdx=v;},
   renderTracks,chordTones,followRow,playMidiOf,rowMidi,
   renderMixer,mixerCard:()=>$('mixerCard'),setTrackVol,setTrackPan,setTrackMute,setTrackSolo,setTrackDelay,setTrackFxMix,
@@ -1274,6 +1275,51 @@ console.log('== 19. 🎼 一键编配 v2：分析旋律 → 更贴合的编配 =
   const ud=T.undoDepth();
   T.autoArrange();
   chk('编配前已存快照（可撤销）',T.undoDepth()>=ud);
+  /* ---- 「琶音器」= 真琶音器：一键编配产出的声部必须当场开启 ARP（42-arrange 6b） ----
+     语义一致：声部叫「琶音器」，那 ARP 就得是开的（否则与示例曲的同名声部同名不同义）。
+     听感根据：ARP 的音高实时取自和弦进行轨 → 之后改和弦 / 换走向永远协和；
+     编排写下的音序退居「节奏栅格」，句尾留白与换气得以保留。 */
+  chk('每个风格的 ARP 图案偏好都合法且非空',
+      T.STYLES.every(s=>Array.isArray(s.arpModes)&&s.arpModes.length
+        &&s.arpModes.every(m=>T.ARP_MODE_IDS.indexOf(m)>=0)),
+      T.STYLES.map(s=>s.id+':'+(s.arpModes||[]).join('/')).join(' '));
+  const arrArp=T.state.tracks.find(t=>t.name==='琶音器');
+  chk('编配的「琶音器」声部 ARP 已开启（名实相符，不是普通声部）',
+      !!arrArp&&T.arpOn(arrArp)===true,arrArp?JSON.stringify(arrArp.arp):'无声部');
+  chk('ARP 配置合法：图案∈4 种 · 节奏=跟画 · 八度=2 · Gate=75%',
+      !!arrArp&&T.ARP_MODE_IDS.indexOf(arrArp.arp.mode)>=0&&arrArp.arp.rate===0
+        &&T.arpOctOf(arrArp)===2&&T.arpGateOf(arrArp)===.75,
+      arrArp?JSON.stringify(arrArp.arp):'—');
+  {
+    const N=T.stepsOf(arrArp);
+    /* 采集「实际发声」：跟画档只在写下的格子上触发（呼吸 / 留白保留） */
+    const sound=()=>{
+      const ca=T.chordAtFor(T.progFor(),N), rows=[], inside=[];
+      for(let s=0;s<N;s++){
+        if(!T.arpFires(arrArp,s)) continue;
+        const row=T.arpRow(arrArp,s);
+        rows.push(row);
+        /* 注意行号可以为负——Octaves 把音池向上叠了同音级行（线性 MIDI 公式照常发声），
+           degOfRow 对负行号同样归一化，所以判据只看「音级是否在当前和弦集合里」 */
+        if(row!=null&&ca[s]&&ca[s].has(T.degOfRow(row))) inside.push(row);
+      }
+      return {rows,inside};
+    };
+    let gridOK=true;
+    for(let s=0;s<N;s++) if(T.arpFires(arrArp,s)!==(arrArp.seq[s]>=0)) gridOK=false;
+    chk('节奏档=跟画：只在编配写下的格子发声（空步不响，留白不被自动滚盖掉）',gridOK);
+    const sndA=sound();
+    /* 跟随性：把和弦轨换成别的和弦 → 同一格的实际发声必须跟着变（写死音高做不到） */
+    let followed=false;
+    for(const root of [3,5,1,6,2,4]){
+      T.state.prog=[T.mkChord(root,4,false)]; T.fitProg();
+      if(sound().rows.join(',')!==sndA.rows.join(',')){ followed=true; break; }
+    }
+    chk('换和弦进行 → 实际发声随之改变（音高实时跟随和弦，永不走音）',followed);
+    const sndB=sound();
+    chk('ARP 实际发声 100% 和弦内音（'+sndB.inside.length+'/'+sndB.rows.length+' 个触发步）',
+        sndB.rows.length>0&&sndB.inside.length===sndB.rows.length);
+  }
   /* 空旋律不应该炸 */
   T.state.tracks.forEach(t=>T.resetSeq(t));
   let noNote=true; try{ T.autoArrange(); }catch(e){ noNote=false; }
