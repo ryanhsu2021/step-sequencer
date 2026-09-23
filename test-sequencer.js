@@ -193,7 +193,7 @@ const expose=`
   toggleArp,setArpMode,setArpRate,setArpOct,setArpGate,arpRow,arpPoolAt,arpHitIdx,arpOn,arpFires,
   noteDurOf,bpmGetter:()=>bpm,arpOctOf,arpGateOf,
   ARP_MODE_NAME,ARP_MODE_IDS,ARP_RATE_NAME,ARP_RATE_SHORT,ARP_RATES,ARP_OCTS,ARP_GATES,ARP_GATE_SHORT,
-  applyArpCfg,arrangeArpMode,ARR_ARP_OCT,
+  fillCounter,CTR_INSTS,CTR_PATS,ARR_LAYER,
   setMode:v=>{modeIdx=v;},
   renderTracks,chordTones,followRow,playMidiOf,rowMidi,
   renderMixer,mixerCard:()=>$('mixerCard'),setTrackVol,setTrackPan,setTrackMute,setTrackSolo,setTrackDelay,setTrackFxMix,
@@ -1171,14 +1171,17 @@ console.log('== 19. 🎼 一键编配 v2：分析旋律 → 更贴合的编配 =
     for(const d of arr) if(set.has((d+step4)%L)) return d;
     return Math.min(...arr);
   };
-  /* 三层音区模型：8 行装 7 个音级，无法硬分三段互不重叠的音区。
-     实际做法是「三层都用完整的和弦音集合、靠重心 + oct 八度差区分」：
-       贝斯 oct=-1 重心最低 ／ 铺底 oct=0 重心居中 ／ 琶音 oct=0 重心最高
-     所以判据不是「行号不越界」，而是「重心关系正确 + 全在和弦内」。 */
-  const CENTROID_ARP_MAX=2.6, CENTROID_PAD_MIN=2.4, CENTROID_PAD_MAX=5.6;
-  let bassTot=0,bassChord=0,arpTot=0,arpChord=0,arpLow=0,padTot=0,padChord=0,padLow=0;
+  /* 声部模型：8 行装 7 个音级，无法硬分互不重叠的音区。
+     实际做法是「各声部都用完整的和弦音集合、靠行号重心 + oct 八度差区分」：
+       贝斯 oct=-1 重心最低 ／ 铺底 oct=0 重心居中
+       副旋律 oct=0、行号由「主旋律行 + 2~4」实时推出 → 永远贴着主旋律下方
+     所以判据不是「行号不越界」，而是「重心关系正确 + 全在和弦内 + 不撞主旋律同度」。 */
+  const CENTROID_PAD_MIN=2.4, CENTROID_PAD_MAX=5.6;
+  let bassTot=0,bassChord=0,ctrTot=0,ctrChord=0,padTot=0,padChord=0;
   let bassStrongTot=0,bassStrongRoot=0,err=null,created=0,padRounds=0;
-  let arpCtrSum=0,arpCtrN=0,padCtrSum=0,padCtrN=0;
+  let ctrCtrSum=0,ctrCtrN=0,padCtrSum=0,padCtrN=0;
+  /* 副旋律的对位质量：走在旋律下方 / 与旋律同度 / 休止（呼吸）比例 */
+  let ctrBelow=0,ctrSame=0,ctrRest=0,ctrAll=0;
   /* 诊断：失败时把「音级→行」映射与一次实际编辑打印出来，避免再靠猜 */
   const probe=[];
   for(let r=0;r<18&&!err;r++){
@@ -1186,8 +1189,9 @@ console.log('== 19. 🎼 一键编配 v2：分析旋律 → 更贴合的编配 =
       const n=setup(r%9);
       T.autoArrange();
       const bass=T.state.tracks.find(t=>t.name==='贝斯');
-      const arp=T.state.tracks.find(t=>t.name==='琶音器');
+      const ctr=T.state.tracks.find(t=>t.name==='副旋律');
       const pad=T.state.tracks.find(t=>t.name==='铺底');
+      const melT=mel();
       /* 每个声部可能和旋律小节数不同：一律按「该声部自己的长度」取和声帧 */
       const caOf=tr=>T.chordAtFor(T.progFor(),T.stepsOf(tr));
       if(probe.length<3&&bass){
@@ -1210,12 +1214,21 @@ console.log('== 19. 🎼 一键编配 v2：分析旋律 → 更贴合的编配 =
           if(T.degOfRow(rr)===rootOfSet(set)) bassStrongRoot++;
         }
       }
-      if(arp){
-        const a=caOf(arp), N=T.stepsOf(arp);
+      if(ctr){
+        const a=caOf(ctr), N=T.stepsOf(ctr), NM=T.stepsOf(melT);
+        /* 该步「最近的旋律音行」：先往左找、再往右找（副旋律的音高基准就是它） */
+        const nearMel=s=>{
+          for(let k=0;k<NM;k++){ const q=s-k; if(q>=0&&melT.seq[q]>=0) return melT.seq[q]; }
+          for(let k=0;k<NM;k++){ const q=s+k; if(q<NM&&melT.seq[q]>=0) return melT.seq[q]; }
+          return -1;
+        };
         for(let s=0;s<N;s++){
-          const rr=arp.seq[s]; if(rr<0) continue;
-          arpTot++; if(a[s]&&a[s].has(T.degOfRow(rr))) arpChord++;
-          arpCtrSum+=rr; arpCtrN++;
+          ctrAll++;
+          const rr=ctr.seq[s]; if(rr<0){ ctrRest++; continue; }
+          ctrTot++; if(a[s]&&a[s].has(T.degOfRow(rr))) ctrChord++;
+          ctrCtrSum+=rr; ctrCtrN++;
+          const mr=nearMel(s);
+          if(mr>=0){ if(rr>mr) ctrBelow++; if(rr===mr) ctrSame++; }
         }
       }
       if(pad){
@@ -1231,7 +1244,7 @@ console.log('== 19. 🎼 一键编配 v2：分析旋律 → 更贴合的编配 =
     }catch(e){ err=e; }
   }
   const dbg=extra=>process.env.SEQ_DEBUG?extra:'';
-  const arpCtr=arpCtrSum/Math.max(1,arpCtrN), padCtr=padCtrSum/Math.max(1,padCtrN);
+  const padCtr=padCtrSum/Math.max(1,padCtrN);
   chk('18 轮多风格编配无异常',!err,err&&err.message+(probe.length?'｜'+probe.join(' ｜ '):''));
   /* 贝斯：绝大多数音落在和弦内（v1 的随机库常落在和弦外） */
   chk('贝斯和弦内音占比 ≥ 95%（实测 '+(100*bassChord/Math.max(1,bassTot)).toFixed(1)+'%）',
@@ -1239,33 +1252,40 @@ console.log('== 19. 🎼 一键编配 v2：分析旋律 → 更贴合的编配 =
   /* 强拍锚在根音：这是低音线「和声清楚」的关键 */
   chk('贝斯强拍落在和弦根音 ≥ 90%（实测 '+(100*bassStrongRoot/Math.max(1,bassStrongTot)).toFixed(1)+'%）',
       bassStrongTot>0&&bassStrongRoot/bassStrongTot>=.90,dbg(probe.join(' ｜ ')));
-  /* 琶音：同样必须在和弦内，作为织体层不能乱撞 */
-  chk('琶音和弦内音占比 ≥ 92%（实测 '+(100*arpChord/Math.max(1,arpTot)).toFixed(1)+'%）',
-      arpTot>0&&arpChord/arpTot>=.92);
+  /* 副旋律：对位线同样必须全在和弦内（撞音会让整条线听起来就是错的） */
+  chk('副旋律和弦内音占比 ≥ 95%（实测 '+(100*ctrChord/Math.max(1,ctrTot)).toFixed(1)+'%）',
+      ctrTot>0&&ctrChord/ctrTot>=.95);
+  /* 对位的三条硬指标：走在旋律下方 / 不与其同度 / 有呼吸 */
+  const belowRate=ctrBelow/Math.max(1,ctrTot), sameRate=ctrSame/Math.max(1,ctrTot),
+        restRate=ctrRest/Math.max(1,ctrAll);
+  chk('副旋律走在主旋律下方（实测 '+(100*belowRate).toFixed(1)+'% ≥ 55%）',belowRate>=.55);
+  chk('副旋律几乎不与主旋律同度（实测 '+(100*sameRate).toFixed(1)+'% ≤ 8%）',sameRate<=.08);
+  chk('副旋律有呼吸（休止步 '+(100*restRate).toFixed(1)+'% ≥ 20%）',restRate>=.20);
   /* 铺底：只在「该风格要铺底」的轮次里统计（padRole:false 的风格本就不该有铺底声部，
      否则会把一条永远空着的死声部当成失败原因） */
   chk('铺底和弦内音占比 ≥ 96%（实测 '+(100*padChord/Math.max(1,padTot)).toFixed(1)
       +'%，'+padRounds+'/'+created+' 轮有铺底）',
       padRounds===0||(padTot>0&&padChord/padTot>=.96));
-  /* 三层重心关系：琶音在高处、铺底居中偏低（这是「不糊在一起」的实际保证） */
-  chk('琶音重心在高音区（平均行 '+arpCtr.toFixed(2)+' ≤ '+CENTROID_ARP_MAX+'）',
-      arpTot>0&&arpCtr<=CENTROID_ARP_MAX);
+  /* 铺底重心居中（这是「不跟贝斯糊在一起」的实际保证） */
   chk('铺底重心居中（平均行 '+padCtr.toFixed(2)+' ∈ ['+CENTROID_PAD_MIN+','+CENTROID_PAD_MAX+']）',
       padRounds===0||(padTot>0&&padCtr>=CENTROID_PAD_MIN&&padCtr<=CENTROID_PAD_MAX));
   /* 铺底一旦存在就必须有内容（曾经的 bug：padRole 轮次里铺底一格都没生成） */
   chk('要铺底的风格确实生成了铺底音符（'+(padRounds?padRounds+' 轮':'无该风格')+'）',
       padRounds===0||padTot>0);
-  /* 三层都铺满全曲（长度与最长声部一致） */
-  chk('三个伴奏声部都铺满 4 小节（64 步）',['贝斯','琶音器'].every(nm=>{
+  /* 各声部都铺满全曲（长度与最长声部一致） */
+  chk('伴奏声部都铺满 4 小节（64 步）',['贝斯','副旋律'].every(nm=>{
     const t=T.state.tracks.find(x=>x.name===nm); return t&&T.stepsOf(t)===64;
   })&&['铺底'].every(nm=>{ const t=T.state.tracks.find(x=>x.name===nm); return !t||T.stepsOf(t)===64; }));
   /* 旋律有音 → 一定有编配产出 */
-  chk('每个声部都生成了内容（三次编配都拿到音符）',bassTot>0&&arpTot>0);
+  chk('每个声部都生成了内容（18 轮都拿到音符）',bassTot>0&&ctrTot>0);
+  chk('副旋律末步一定落音（终止感）',(()=>{
+    const t=T.state.tracks.find(x=>x.name==='副旋律');
+    return !!t&&t.seq[T.stepsOf(t)-1]>=0; })());
   chk('贝斯被铺满全曲长度（4 小节＝64 步）',
       T.state.tracks.find(t=>t.name==='贝斯')&&T.stepsOf(T.state.tracks.find(t=>t.name==='贝斯'))===64);
   /* 多样化：连续两次编配结果不应完全相同 */
   setup(1);
-  const arr1=()=>{ T.autoArrange(); const b=T.state.tracks.find(t=>t.name==='贝斯'),a=T.state.tracks.find(t=>t.name==='琶音器');
+  const arr1=()=>{ T.autoArrange(); const b=T.state.tracks.find(t=>t.name==='贝斯'),a=T.state.tracks.find(t=>t.name==='副旋律');
     return JSON.stringify([b&&b.seq,a&&a.seq]); };
   const s1=arr1(), s2=arr1(), s3=arr1();
   chk('连点编配结果不同（≥2 个版本 / 3 次）',new Set([s1,s2,s3]).size>=2,'distinct='+new Set([s1,s2,s3]).size);
@@ -1275,51 +1295,49 @@ console.log('== 19. 🎼 一键编配 v2：分析旋律 → 更贴合的编配 =
   const ud=T.undoDepth();
   T.autoArrange();
   chk('编配前已存快照（可撤销）',T.undoDepth()>=ud);
-  /* ---- 「琶音器」= 真琶音器：一键编配产出的声部必须当场开启 ARP（42-arrange 6b） ----
-     语义一致：声部叫「琶音器」，那 ARP 就得是开的（否则与示例曲的同名声部同名不同义）。
-     听感根据：ARP 的音高实时取自和弦进行轨 → 之后改和弦 / 换走向永远协和；
-     编排写下的音序退居「节奏栅格」，句尾留白与换气得以保留。 */
-  chk('每个风格的 ARP 图案偏好都合法且非空',
-      T.STYLES.every(s=>Array.isArray(s.arpModes)&&s.arpModes.length
-        &&s.arpModes.every(m=>T.ARP_MODE_IDS.indexOf(m)>=0)),
-      T.STYLES.map(s=>s.id+':'+(s.arpModes||[]).join('/')).join(' '));
-  const arrArp=T.state.tracks.find(t=>t.name==='琶音器');
-  chk('编配的「琶音器」声部 ARP 已开启（名实相符，不是普通声部）',
-      !!arrArp&&T.arpOn(arrArp)===true,arrArp?JSON.stringify(arrArp.arp):'无声部');
-  chk('ARP 配置合法：图案∈4 种 · 节奏=跟画 · 八度=2 · Gate=75%',
-      !!arrArp&&T.ARP_MODE_IDS.indexOf(arrArp.arp.mode)>=0&&arrArp.arp.rate===0
-        &&T.arpOctOf(arrArp)===2&&T.arpGateOf(arrArp)===.75,
-      arrArp?JSON.stringify(arrArp.arp):'—');
-  {
-    const N=T.stepsOf(arrArp);
-    /* 采集「实际发声」：跟画档只在写下的格子上触发（呼吸 / 留白保留） */
-    const sound=()=>{
-      const ca=T.chordAtFor(T.progFor(),N), rows=[], inside=[];
-      for(let s=0;s<N;s++){
-        if(!T.arpFires(arrArp,s)) continue;
-        const row=T.arpRow(arrArp,s);
-        rows.push(row);
-        /* 注意行号可以为负——Octaves 把音池向上叠了同音级行（线性 MIDI 公式照常发声），
-           degOfRow 对负行号同样归一化，所以判据只看「音级是否在当前和弦集合里」 */
-        if(row!=null&&ca[s]&&ca[s].has(T.degOfRow(row))) inside.push(row);
-      }
-      return {rows,inside};
-    };
-    let gridOK=true;
-    for(let s=0;s<N;s++) if(T.arpFires(arrArp,s)!==(arrArp.seq[s]>=0)) gridOK=false;
-    chk('节奏档=跟画：只在编配写下的格子发声（空步不响，留白不被自动滚盖掉）',gridOK);
-    const sndA=sound();
-    /* 跟随性：把和弦轨换成别的和弦 → 同一格的实际发声必须跟着变（写死音高做不到） */
-    let followed=false;
-    for(const root of [3,5,1,6,2,4]){
-      T.state.prog=[T.mkChord(root,4,false)]; T.fitProg();
-      if(sound().rows.join(',')!==sndA.rows.join(',')){ followed=true; break; }
-    }
-    chk('换和弦进行 → 实际发声随之改变（音高实时跟随和弦，永不走音）',followed);
-    const sndB=sound();
-    chk('ARP 实际发声 100% 和弦内音（'+sndB.inside.length+'/'+sndB.rows.length+' 个触发步）',
-        sndB.rows.length>0&&sndB.inside.length===sndB.rows.length);
+  /* ---- v3：编配产出「副旋律」而不再产出「琶音器」 ----
+     背景：编配曾产出一条叫「琶音器」、ARP 却不一定开着的声部——与示例曲里那条
+     真琶音声部同名不同义；反过来把它的 ARP 强行开着，又等于让 ARP 引擎接管音高
+     （编配写下的织体线只在关掉 ARP 时才是实际发声）。v3 把织体层换成「副旋律」：
+     一条写死的对位线，语义与行为都自洽（改和弦后重新编配依然全在和弦内）。 */
+  chk('每个风格都给了副旋律音色池 ctrI，且都是真实音色',
+      T.STYLES.every(s=>Array.isArray(s.ctrI)&&s.ctrI.length
+        &&s.ctrI.every(id=>T.INSTRUMENTS.some(i=>i.id===id))),
+      T.STYLES.map(s=>s.id+':'+(s.ctrI||[]).join('/')).join(' '));
+  chk('风格里不再有 arpModes（编配开 ARP 的旧字段已随 v3 移除）',
+      T.STYLES.every(s=>s.arpModes===undefined));
+  setup(1);
+  const arpMainBefore=T.arpOn(mel());
+  T.autoArrange();
+  const namesAfter=T.state.tracks.map(t=>t.name);
+  chk('编配产出「副旋律」声部',namesAfter.indexOf('副旋律')>=0,'names='+namesAfter.join(','));
+  chk('编配不再往「琶音器」声部塞音序（不再产出琶音器）',(()=>{
+    const a=T.state.tracks.find(t=>t.name==='琶音器');
+    return !a||!a.seq.some(v=>v>=0); })());
+  chk('编配不改动主旋律的「琶音器」开关（只碰伴奏声部）',
+      T.arpOn(mel())===arpMainBefore,'before='+arpMainBefore+'｜after='+T.arpOn(mel()));
+  /* 复用空闲声部时的真实隐患：示例曲的「琶音器」轨被清空后会被编配复用为「副旋律」，
+     若沿用它的 arp.on=true，写下的对位线根本不会发声（音高被 ARP 引擎接管）。 */
+  chk('编配产出的伴奏声部一律不开着「琶音器」（写死音高的织体线不能被 ARP 接管）',
+      ['贝斯','副旋律','铺底'].every(nm=>{
+        const t=T.state.tracks.find(x=>x.name===nm); return !t||T.arpOn(t)===false; }),
+      ['贝斯','副旋律','铺底'].map(nm=>{ const t=T.state.tracks.find(x=>x.name===nm);
+        return nm+':'+(t?T.arpOn(t):'无'); }).join(' '));
+  chk('副旋律音色避开主旋律已用的音色（两条线不会同音色糊在一起）',(()=>{
+    const c=T.state.tracks.find(t=>t.name==='副旋律'), m=mel();
+    return !!c&&!!m&&c.inst!==m.inst; })(),
+    'ctr='+(T.state.tracks.find(t=>t.name==='副旋律')||{}).inst+'｜mel='+mel().inst);
+  /* 换和弦 → 重新编配依然 100% 和弦内音（写死音高的线靠「重新生成」保持协和） */
+  T.state.prog=[T.mkChord(3,4,false)]; T.fitProg();
+  T.autoArrange();
+  const ctr2=T.state.tracks.find(t=>t.name==='副旋律');
+  const ca2=T.chordAtFor(T.progFor(),T.stepsOf(ctr2));
+  let ok2=0,tot2=0;
+  for(let s=0;s<T.stepsOf(ctr2);s++){
+    const rr=ctr2.seq[s]; if(rr<0) continue;
+    tot2++; if(ca2[s]&&ca2[s].has(T.degOfRow(rr))) ok2++;
   }
+  chk('换和弦后重新编配 → 副旋律仍 100% 和弦内音（'+ok2+'/'+tot2+'）',tot2>0&&ok2===tot2);
   /* 空旋律不应该炸 */
   T.state.tracks.forEach(t=>T.resetSeq(t));
   let noNote=true; try{ T.autoArrange(); }catch(e){ noNote=false; }
@@ -1737,7 +1755,8 @@ chk('手输改名照常工作（与下拉互不干扰）',nm.name==='我的主�
        主旋律 = 和声内变奏（节奏不动、只改音）；和弦轨与音色不变
    ============================================================ */
 console.log('\n--- 23. 无限演化（♾ 演化按钮） ---');
-/* 干净环境：重建示例曲（主旋律 + 贝斯 + 琶音器 + 鼓组[+ 铺底]），固定和弦轨 */
+/* 干净环境：重建示例曲（主旋律 + 贝斯 + 琶音器 + 鼓组[+ 铺底]；琶音器开着 ARP，
+   既不算演化对象、也不会被当成旋律画像源），固定和弦轨 */
 T.seedDefault();
 T.state.progEdited=true;                            // 演化期间和弦轨不得变动
 T.setStyle(1); T.seedDefault(); T.state.progEdited=true;   // setStyle 会按风格重写——再补一次种子
@@ -1747,7 +1766,8 @@ const melSnap23=snap(mel23);
 const accSnap23=acc23.map(t=>t.kind==='drum'?JSON.stringify(t.p):snap(t));
 const inst23=acc23.filter(t=>t.kind==='inst').map(t=>t.inst);
 const progSnap23=JSON.stringify(T.progFor());
-chk('前置：示例曲有 '+(acc23.length)+' 条伴奏声部可供演化',acc23.length>=3,
+chk('前置：示例曲有 '+(acc23.length)+' 条伴奏声部可供演化（含贝斯；琶音器不算）',
+    acc23.length>=2&&acc23.some(t=>t.name==='贝斯'),
     'names='+acc23.map(t=>t.name).join(','));
 chk('前置：主旋律被识别为演化对象',T.infMelody()===mel23);
 /* ---- 开关前置检查：既无伴奏也无有音的旋律时拒绝开启 ---- */

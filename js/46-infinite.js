@@ -3,13 +3,13 @@
    step-sequencer · 46-infinite
    ♾ 无限演化：播放中每 1–6 小节自动微调伴奏音序
    ------------------------------------------------------------
-   前提：先点过 🎼 一键编配（演化对象 = 主旋律 + 编配生成的贝斯 / 琶音器 /
+   前提：先点过 🎼 一键编配（演化对象 = 主旋律 + 编配生成的贝斯 / 副旋律 /
    铺底 / 鼓组，按全站统一的命名口径识别）。和弦轨与所有音色不变。
 
    「不突兀」的三重保证：
      1. 变化只发生在小节交界（调度钩子挂在 bar 起点上）——重音乐句永远完整；
      2. 每次变换每个声部只替换 1–2 个小节，其余原样保留（杂交式演化）；
-     3. 替换内容来自同一套编配生成器（fillBass/fillArp/fillPad / 风格鼓库），
+     3. 替换内容来自同一套编配生成器（fillBass/fillCounter/fillPad / 风格鼓库），
         和弦内音、音区避让、节奏规律全部继承，不会跳出当前和声框架。
      4. 主旋律是「和声内变奏」：节奏骨架一字不动，只把选中小节里的音在当前
         和弦 / 音阶内改音（强拍偏和弦音、弱拍偏级进、句尾只许和弦音落在
@@ -20,7 +20,7 @@
    状态不进存档：刷新页面自动回到关闭（演化是播放中的会话行为）。
    ============================================================ */
 /* 演化对象的角色名（与 42-arrange 的 ensureFreeVoice 命名口径一致） */
-const INF_ROLES=['贝斯','琶音器','铺底'];
+const INF_ROLES=['贝斯','副旋律','铺底'];
 /* 窗口上下限：每 1–6 小节变换一次（用户可感知的最短/最长间隔） */
 const INF_WIN_MIN=1, INF_WIN_MAX=6;
 let infOn=false;            // 开关（不持久化）
@@ -30,12 +30,14 @@ let infNext=4;              // 下次变换的窗口长度（1–6 随机重掷�
 const infTargets=()=>state.tracks.filter(t=>
   t.kind==='drum'||(t.kind==='inst'&&INF_ROLES.indexOf(t.name)>=0));
 /* 演化声部各自的重生器（与一键编配同一套 fill） */
-const INF_FILL={ '贝斯':fillBass, '琶音器':fillArp, '铺底':fillPad };
+const INF_FILL={ '贝斯':fillBass, '副旋律':fillCounter, '铺底':fillPad };
 /* 主旋律声部：非伴奏角色的 inst 里「内容最多」的那条（与 pickMelodyTrack 同口径，
-   但明确排除贝斯 / 琶音器 / 铺底——它们就算更满也只是伴奏，不是旋律）。 */
+   但明确排除贝斯 / 副旋律 / 铺底——它们就算更满也只是伴奏，不是旋律）。
+   另排除开着「琶音器」的声部：那种声部的实际音高由 ARP 引擎实时生成，音序只是
+   节奏栅格，拿它当旋律画像会把整首曲子的重心算歪。 */
 function infMelody(){
   const cand=state.tracks.filter(t=>t.kind==='inst'&&
-    INF_ROLES.indexOf(t.name)<0&&t.seq.some(v=>v>=0));
+    INF_ROLES.indexOf(t.name)<0&&!arpOn(t)&&t.seq.some(v=>v>=0));
   if(!cand.length) return null;
   const score=t=>{ let n=0;
     for(let s=0;s<stepsOf(t);s++) if(t.seq[s]>=0) n+=(s%4===0?2:1);

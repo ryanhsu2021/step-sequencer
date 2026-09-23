@@ -1,7 +1,7 @@
 'use strict';
 /* ============================================================
    step-sequencer · 42-arrange
-   🎼 一键编配 v2：先「听懂」主旋律，再生成贝斯 / 琶音 / 铺底 / 鼓组
+   🎼 一键编配 v3：先「听懂」主旋律，再生成贝斯 / 副旋律 / 铺底 / 鼓组
    ------------------------------------------------------------
    v1 的缺陷：完全没看主旋律，只按风格的节奏库随机填音。
    v2 的思路（三件事）：
@@ -9,11 +9,16 @@
         音域重心 / 呼吸点」——这是后面所有声部做决定的依据。
      2. 和声锁定 preferProg()：如果用户没手动改过和弦轨，用 deriveProgression()
         从旋律反推一条和声（比纯风格随机更贴合实听），并写明推导来源。
-     3. 三声部各司其职（对位 + 音域避让）：
-          贝斯  ＝ 和声地基：强拍锚在和弦根音，旋律长音/句尾处补五音/三音走动
-          琶音  ＝ 织体层：绝不与贝斯撞区；**生成后立刻开启 ARP**（见第 6b 节），
-                  本节的生成器负责「节奏栅格 + 呼吸」，音高交给琶音器实时从和弦生成
-          铺底  ＝ 长音层：只落在和弦骨架音，躲在贝斯之上、旋律之下
+     3. 各声部各司其职（对位 + 音域避让）：
+          贝斯   ＝ 和声地基：强拍锚在和弦根音，旋律长音/句尾处补五音/三音走动
+          副旋律 ＝ 对位层：一条能独立成句的第二旋律线，永远落在主旋律**下方**，
+                  与它反向 / 斜向进行（旋律上行则副旋律下行或保持），旋律在唱时
+                  让位、旋律停顿换气时接话；全在和弦内，句尾落和弦音
+          铺底   ＝ 长音层：只落在和弦骨架音，躲在贝斯之上、旋律之下
+   v3 的变化：编配不再产出「琶音器」声部（v2 曾把它当织体层，但它与卡片的
+   ARP 开关语义互相纠缠：同名不同义、且写死音高在改和弦后会撞音）。需要琶音
+   时用卡片上的「琶音器」开关或示例曲里那条真琶音声部；编配改用「副旋律」，
+   与主旋律构成对位，听感上比音型化的琶音更「有句子」。
    ============================================================ */
 /* ---------- 通用小工具 ---------- */
 const arrPick=a=>a[(Math.random()*a.length)|0];
@@ -96,6 +101,9 @@ function analyzeMelody(tr,frames){
   /* 行号 → 距主音的半音数（八度折叠），用于「同音级不同八度」的判定 */
   const rowPc=r=>{ const a=ivOf(), L=a.length, i=ROWS-1-r; return a[((i%L)+L)%L]; };
   return {N,L,step5,deg,onset,cad,gaps,rAvg,bN,meanDeg,dens,rootOf,tonesOf,inChord,thirdOf,rowDeg,rowPc,
+          /* 旋律每步的**行号**（-1=无音）。deg 是音级、row 是行号，画副旋律时
+             需要行号才能算出「在旋律下方几度」，两者不能混用。 */
+          row:tr.seq.slice(),
           /* 该窗口旋律行（用于音域避让） */
           rowAt:s=>{ if(!onset.length) return 3.5; let bst=onset[0],bd=1e9;
             for(const o of onset){ const d=Math.abs(o.s-s); if(d<bd){bd=d;bst=o;} } return bst.deg; }};
@@ -167,7 +175,8 @@ function fitArrangedProg(p){
 const ARR_LAYER={
   bass:{lo:0,hi:ROWS-1,pref:ROWS-1,oct:-1},   // 贝斯：整个键盘的最低音区（再叠 oct 的 -1 八度）
   pad: {lo:0,hi:ROWS-1,pref:ROWS-3,oct:0},    // 铺底：偏低的中间层
-  arp: {lo:0,hi:ROWS-4,pref:0,     oct:0},    // 琶音：偏高的织体层（行 5..7 留给贝斯，避免同八度糊掉）
+  arp: {lo:0,hi:ROWS-4,pref:0,     oct:0},    // 琶音：偏高的织体层（示例曲用，编配已不产出）
+  ctr: {lo:0,hi:ROWS-1,pref:ROWS-2,oct:0},    // 副旋律：实际行号由「主旋律行 + 2~4」实时推出，这里只给兜底重心
 };
 /* 某行在音级空间的实际音高（半音、跨八度不折叠）：相同音级的行靠它分高低 */
 function rowPitch(r){
@@ -314,7 +323,10 @@ function fillBass(t,M,prog){
   t.last=t.seq.slice();
 }
 
-/* ============ 4. 琶音：织体层 ============
+/* ============ 4. 琶音：织体层（示例曲专用；一键编配自 v3 起不再产出） ============
+   注：v3 把编配的织体层换成了「副旋律」（见 4b）——琶音声部与卡片的 ARP 开关
+   语义容易互相纠缠（同名不同义），编配不再生成它。本函数保留给示例曲
+   seedDefault 与旧存档里的琶音声部使用。
    与 v1 的区别：节奏型仍然取自风格库，但**音高**不再冷随机——
      · 每个和弦段内按和声张力排序（根音/五音稳、三音/七音偏情绪）后取音
      · 织体中心跟着 M.rAvg（旋律音域走向）上下浮动，旋律走高时织体也跟着抬
@@ -369,6 +381,114 @@ function fillArp(t,M,prog){
     const last=prog[prog.length-1]||prog[0];
     t.seq[n-1]=nearestRow(A_LO,A_HI,last.root,A_HI,last.tones);
   }
+  t.last=t.seq.slice();
+}
+
+/* ============ 4b. 副旋律：对位层 ============
+   目标不是「伴奏音型」，而是一条能独立哼出来的第二旋律线（Counter-melody）。
+   对位法里最要紧的四条，这里全部落实：
+
+     · 音区在旋律**下方**：行号取「主旋律当前行 + 2~4」（约下方三度到六度）——
+       旋律走高副旋律跟着抬，但永远沉在它下面，听感上是「主 + 副」而不是两条
+       旋律抢戏。旋律已经压到最低几行（下方没空间）时自动翻到它上方，
+       免得钻到贝斯里糊成一团。
+     · 反向 / 斜向优先：上一动是上行 → 本音优先下行，反之亦然（对位禁则里最忌
+       平行同向）；实在走不动时保持同高度（斜向停留）也完全可用。
+     · 让位与接话：旋律在唱（±1 步内有音）时副旋律只肯在隔了 1.5 拍以上的地方
+       补一个长音；旋律一旦停顿（连续 ≥1 拍静默）就进来接话——「呼应」由此而来。
+       旋律换气后重新起唱的那一步（M.gaps）永远让开。
+     · 和弦内音 + 终止感：所有音都取自当前和弦（强拍偏三音 / 五音，根音留给贝斯），
+       末步必定落音。另有一条硬禁则：**不与主旋律同度**（同行号重罚、
+       同音级轻罚）。
+
+   节奏型来自 CTR_PATS（每半小节换一条），配合上面三条限制，长出的线有起伏、
+   有呼吸、也有休止——不是匀速的音型。 */
+const CTR_PATS=[
+  [1,0,0,1,0,0,1,0],
+  [1,0,1,0,0,1,0,0],
+  [1,0,1,0,1,0,0,1],
+  [1,0,0,1,0,1,0,1],
+  [1,0,1,0,1,0,1,0],
+];
+function fillCounter(t,M,prog){
+  const n=stepsOf(t), L=M.L, R_LO=0, R_HI=ROWS-1;
+  const CV=chordViewAt(prog,n);
+  t.seq=new Array(n).fill(-1);
+  /* ---- 主旋律行轮廓：无音步沿用最近的前音（长音延续），开头借用后音 ---- */
+  const N=M.N, mr=new Array(N).fill(-1);
+  {
+    let last=-1;
+    for(let s=0;s<N;s++){ const r=(M.row&&M.row[s]>=0)?M.row[s]:-1; if(r>=0) last=r; mr[s]=last; }
+    let nxt=-1;
+    for(let s=N-1;s>=0;s--){ if(mr[s]<0) mr[s]=nxt; else nxt=mr[s]; }
+    for(let s=0;s<N;s++) if(mr[s]<0) mr[s]=ARR_LAYER.ctr.pref;
+  }
+  const mrAt=s=>mr[clamp(s,0,N-1)];
+  /* ---- 忙闲判定 / 静默窗 ---- */
+  const near=new Array(N).fill(false);          // ±1 步内有旋律音 = 旋律在唱
+  for(let s=0;s<N;s++) if(M.deg[s]>=0){
+    for(let k=-1;k<=1;k++){ const q=s+k; if(q>=0&&q<N) near[q]=true; }
+  }
+  const holes=new Set();                        // 连续 ≥1 拍的静默 = 副旋律的接话位
+  { let run=0,st=0;
+    for(let s=0;s<=N;s++){
+      if(s<N&&M.deg[s]<0){ if(!run) st=s; run++; continue; }
+      if(run>=4) for(let k=st;k<st+run;k++) holes.add(k);
+      run=0;
+    } }
+  let prev=-1, prev2=-1;                        // 前两个副旋律音的行号（判反向用）
+  /* ---- 音高选取：旋律下方、和弦内、反向优先、不撞同度 ---- */
+  const pickRow=(s,strong,tail)=>{
+    const rm=mrAt(clamp(s,0,N-1));
+    const tones=CV.tonesOf(s)||[CV.rootOf(s)];
+    const rootD=((CV.rootOf(s)%L)+L)%L;
+    const want=rm+2+((Math.random()*3)|0);      // 目标：旋律下方 2~4 行（三度~六度）
+    let lo=clamp(rm+1,R_LO,R_HI), hi=clamp(rm+5,R_LO,R_HI);
+    if(hi<=lo){ lo=clamp(rm-4,R_LO,R_HI); hi=clamp(rm-1,R_LO,R_HI); }   // 下方没空间 → 翻到上方
+    const pool=[];
+    const collect=(a,b)=>{ for(let r=a;r<=b;r++){
+      const d=((degOfRow(r)%L)+L)%L;
+      if(tones.indexOf(d)>=0&&pool.indexOf(r)<0) pool.push(r); } };
+    collect(lo,hi);
+    if(!pool.length) collect(R_LO,R_HI);        // 放宽到全键盘（仍限和弦音）
+    if(!pool.length) return nearestRow(R_LO,R_HI,rootD,rm+2,tones);
+    const dm=((degOfRow(clamp(rm,R_LO,R_HI))%L)+L)%L;
+    const third=((rootD+2)%L), fifth=((rootD+M.step5)%L);
+    let best=pool[0],bd=1e9;
+    for(const r of pool){
+      const d=((degOfRow(r)%L)+L)%L;
+      let c=Math.abs(r-want)*1.1;
+      if(r===rm) c+=5;                          // 与旋律同度：对位最忌
+      if(d===dm) c+=2.5;                        // 与旋律同音级（隔八度重合）
+      if(prev>=0){
+        const jump=Math.abs(r-prev);
+        c+= jump<=1?0:(jump<=4?.4:1.6);         // 以级进 / 小跳为主
+        if(prev2>=0) c+=((prev<prev2)===(r<prev))?1.8:0;   // 与上一动同向 → 罚（反向免费）
+      }
+      if(strong||tail) c+=(d===third||d===fifth)?0:(d===rootD?.8:.3);
+      if(c<bd){ bd=c; best=r; }
+    }
+    return best;
+  };
+  /* ---- 走位：节奏型给候选位，让位 / 接话 / 呼吸三条限制决定起不起音 ---- */
+  const pats=arrShuffle(CTR_PATS).slice(0,2);
+  let lastOn=-99, run=0;
+  for(let s=0;s<n;s++){
+    if(M.gaps.has(s)) continue;                 // 旋律换气后重新起唱：副旋律让开
+    const sm=clamp(s,0,N-1);
+    const pat=pats[Math.floor(s/(BAR/2))%pats.length]||CTR_PATS[0];
+    if(!pat[s%8]) continue;
+    /* 旋律在唱 → 只肯隔 3 步以上补一个长音；旋律停顿（holes）→ 自由接话。
+       阈值取 3 步（0.75 拍）：再宽下去副旋律会稀疏到几乎听不出是一条线
+       （实测 6 步时只剩零星点缀），再紧又会跟主旋律抢拍子。 */
+    if(near[sm]&&!holes.has(sm)&&s-lastOn<3) continue;
+    if(run>=3){ run=0; continue; }              // 连续三个音后强制空一拍（留呼吸）
+    const r=pickRow(s,s%4===0,(s===n-1)||M.cad.indexOf(s)>=0);
+    if(r<0) continue;
+    t.seq[s]=r; prev2=prev; prev=r; lastOn=s; run++;
+  }
+  /* 末步兜底：一定落音，副旋律才有终止感 */
+  if(t.seq[n-1]===-1) t.seq[n-1]=pickRow(n-1,true,true);
   t.last=t.seq.slice();
 }
 
@@ -441,6 +561,10 @@ function ensureFreeVoice(role,except){
   if(!t) t=state.tracks.find(x=>x.kind==='inst'&&x!==except);
   if(t){
     recolor(); t.name=role.name; t.inst=role.inst; t.oct=role.oct; t.mute=false; t.solo=false;
+    /* 编配产出的是**写死音高的织体线**：如果这条声部原来开着「琶音器」，实际发声
+       会被 ARP 引擎接管，编配刚刚写下的音序就白写了（贝斯 / 副旋律 / 铺底同理）。
+       复用空闲声部时把 ARP 关掉——配置本身保留，用户想再开随时可以开。 */
+    if(t.arp&&t.arp.on) t.arp.on=false;
     if(barsOf(t)!==songBars()){ t.bars=songBars(); resizeTrack(t,stepsOf(t)); }   // 铺满全曲长度
   }
   return t;
@@ -473,33 +597,24 @@ function pickMelodyTrack(){
     for(let s=0;s<stepsOf(t);s++) if(t.seq[s]>=0) n+=(s%4===0?2:1);
     return n;
   };
-  return insts.slice().sort((a,b)=>score(b)-score(a)||(barsOf(b)-barsOf(a)))[0];
+  /* 优先挑「不是琶音器」的声部：开着 ARP 的声部实际音高由引擎实时生成、
+     音序只是节奏栅格，拿它当旋律画像会把音域重心和句尾都算歪。
+     全站只有琶音器可挑时才退回全部（否则会误报「没有旋律」）。 */
+  const plain=insts.filter(t=>!arpOn(t));
+  const pool=plain.length?plain:insts;
+  return pool.slice().sort((a,b)=>score(b)-score(a)||(barsOf(b)-barsOf(a)))[0];
 }
-/* ============ 6b. 琶音器声部的 ARP 配置（编配产物的语义一致性） ============
-   一键编配产出的声部叫「琶音器」，那它就**必须是一个真正的琶音器**——否则名字与
-   行为不符：用户看到的是一条普通声部（「琶音器」开关是灭的、音高照你画的响），
-   而示例曲里的同名声部却是开着的，两处同名不同义。
-
-   为什么开着比关掉更好听（而不是为了「语义正确」而牺牲听感）：
-     ① **永远协和、自动跟随**：ARP 的音高实时取自上方和弦进行轨
-        （arpPoolAt → state.prog），所以换和弦、挑级数、换常用走向、⤵ 从旋律推导、
-        🎲 随机同风格之后，琶音立刻就跟着变且必然是和弦内音；而一条写死的音高线
-        在改和弦之后就会开始撞音（这是关掉 ARP 时最实际的听感损失）。
-     ② **分工更清楚**：编配生成器擅长的是「节奏栅格 + 呼吸」——强拍落在哪、
-        换气点留白、密度跟着旋律让位；这些全部保留（ARP 节拍照样走 seq≥0 的格子）。
-        音高这种「按和弦自动算」的活儿交给琶音器，比写死一条线更贴合织体层的角色。
-     ③ **八度铺开**：ARP 音池能向上叠同音级行（Octaves），跨两个八度 sweeping——
-        这正是经典琶音的标志性格局（写死的音序困在单组八度里打转，味道就少一半）。
-     节奏档固定在「跟画」：只在你编配出的那些格子上发声。这样编配算出来的
-     句尾留白 / 换气不会被自动滚的密音盖掉（1/16 自动档在没画音的格子也按拍触发，
-     会与旋律抢节奏），而且无限演化改这条声部的音序时，听感上也真的会变。
-     音序里的音高**照旧写下来**——关掉 ARP 就立刻回到这条写好的织体线（非破坏性）。 */
-const ARR_ARP_OCT=2;                       // 音池跨 2 个八度（经典 sweep 手感，与示例曲一致）
-/* 该风格偏好哪个图案（up / updown / down / random，见 03-styles 的 arpModes） */
-const arrangeArpMode=()=>arrPick(SP_.arpModes||['up']);
-function applyArpCfg(t){
-  t.arp={on:true,mode:arrangeArpMode(),rate:0,oct:ARR_ARP_OCT,gate:.75};
-}
+/* ============ 6b. 编配产出的声部清单（v3） ============
+   贝斯 + 副旋律（+ 风格需要时的铺底）+ 鼓组。**不再产出琶音器**：
+     · 一条声部叫「琶音器」而 ARP 开关是灭的，读起来就是同名不同义
+       （示例曲里另有一条真·琶音声部，两处含义不同）；
+     · 反过来把编配的织体强行开着 ARP，又等于让 ARP 引擎接管它的音高——
+       编配写下的织体线只在关掉 ARP 时才是实际发声，语义绕。
+   织体层改由「副旋律」承担后，这个权衡就不存在了：副旋律是一条写死的对位线，
+   生成时所有音都取自当时的和弦，所以改和弦 / 换走向同样协和，而且听感上
+   更像「一条有句子的第二旋律」。 */
+/* 副旋律的通用音色池（风格没给 ctrI 时的兜底）：偏旋律性、能拉长音 */
+const CTR_INSTS=['strings','cello','flute','epiano','vibes','musicbox','organ','plucksyn','lead'];
 function autoArrange(){
   const mel=pickMelodyTrack();
   if(!mel||!mel.seq.some(v=>v>=0)){ toast('请先在某个声部摆上几个音，再点一键编配'); return; }
@@ -511,20 +626,19 @@ function autoArrange(){
   const prog=progFor();                       // 以 state.prog 为准（已含 fitProg 的平铺结果）
   const frames=chordFramesAt(prog,stepsOf(mel));
   const M=analyzeMelody(mel,frames);
+  /* 副旋律音色：风格池里挑，避开主旋律已经用着的音色（两条线同音色会糊成一条） */
+  const ctrPool=(SP_.ctrI&&SP_.ctrI.length?SP_.ctrI:CTR_INSTS).filter(id=>id!==mel.inst);
   const roles=[
     {name:'贝斯',inst:arrPick(SP_.bassI||['bass']),oct:ARR_LAYER.bass.oct,fill:fillBass},
-    /* arp:true → 生成完立刻开 ARP（见 6b）：音高交给琶音器实时跟随和弦，音序只当节奏栅格 */
-    {name:'琶音器',inst:arrPick(SP_.chordI||['pluck','epiano','marimba']),oct:ARR_LAYER.arp.oct,fill:fillArp,arp:true},
+    {name:'副旋律',inst:arrPick(ctrPool.length?ctrPool:CTR_INSTS),oct:ARR_LAYER.ctr.oct,fill:fillCounter},
   ];
   if(SP_.padRole) roles.push({name:'铺底',inst:arrPick(['pad','strings','choir','cello','organ']),oct:ARR_LAYER.pad.oct,fill:fillPad});
   const made=[];
   for(const role of roles){
     const t=ensureFreeVoice(role,mel);
     if(!t) continue;
-    role.fill(t,M,prog);                          // 先写下织体线：关掉 ARP 就回到这一版
-    if(role.arp) applyArpCfg(t);                  // 「琶音器」声部当场开 ARP（名实相符）
-    made.push(t.name+'('+barsOf(t)+'小节'
-      +(role.arp?'·ARP '+ARP_MODE_SHORT[t.arp.mode]:'')+')');
+    role.fill(t,M,prog);                          // 写下对位线：音高全部取自当前和弦
+    made.push(t.name+'('+barsOf(t)+'小节)');
   }
   const d=ensureDrum();
   renderTracks();

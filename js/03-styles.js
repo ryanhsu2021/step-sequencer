@@ -50,8 +50,8 @@ const INST_NAME=id=>(INSTRUMENTS.find(i=>i.id===id)||{}).name||id;
    maskDens 随机节奏候选的密度基准
    prog     该风格常用的和声进行（音阶级数，每小节一个）
    seventh  是否使用七和弦色彩        chBias  强拍和弦音权重
-   bassPats/arpPats/arpOrders  低音与和弦音型的节奏库
-   arpModes 一键编配生成「琶音器」声部时开启的 ARP 图案偏好（重复项＝权重）
+   bassPats/arpPats/arpOrders  低音与和弦音型的节奏库（arp* 现供示例曲的琶音声部使用）
+   ctrI     一键编配生成「副旋律」声部时的音色池（旋律性音色，会避开主旋律已用的那个）
    padRole  编配时是否额外加一条铺底声部
    drums    该风格推荐的鼓组预设（卡片上会置顶标 ★）
 */
@@ -66,8 +66,8 @@ const STYLES=[
  mel:['pad','bell','strings','ensemble','marimba','epiano'],bassI:['subbass','bass'],chordI:['marimba','pluck','bell'],
  bassPats:[{0:0,6:'f'},{0:0,4:0},{0:0,3:0},{0:0}],
  arpPats:[[1,0,0,0,0,0,1,0],[1,0,0,0,0,0,0,0],[1,0,1,0,0,0,0,0]],
- arpOrders:[[0,1,2],[0,2,1],[1,0,2]],padRole:true,drums:['ambient','ballad','folk','bossa'],
- arpModes:['updown','up']},
+arpOrders:[[0,1,2],[0,2,1],[1,0,2]],padRole:true,drums:['ambient','ballad','folk','bossa'],
+ctrI:['strings','cello','choir','musicbox','flute']},
 
 {id:'pop',name:'流行 Pop',emoji:'🎧',bpm:[96,124],swing:0,
  desc:'抓耳主线 · 规整八拍 · 电钢与拨弦',
@@ -76,8 +76,8 @@ const STYLES=[
  mel:['epiano','piano','pluck','eguitar','marimba'],bassI:['bass','subbass'],chordI:['epiano','pluck','marimba'],
  bassPats:[{0:0,3:0,6:'f'},{0:0,4:0,6:'f'},{0:0,2:0,4:0,6:'f'},{0:0,3:'f',6:0}],
  arpPats:[[1,0,1,0,1,1,0,1],[1,0,1,0,1,0,1,0],[1,1,0,1,0,1,1,0],[1,0,0,1,0,1,0,1]],
- arpOrders:[[0,1,2],[2,1,0],[0,1,2,1],[1,2,0]],padRole:false,drums:['pop','four','folk'],
- arpModes:['up','updown']},
+arpOrders:[[0,1,2],[2,1,0],[0,1,2,1],[1,2,0]],padRole:false,drums:['pop','four','folk'],
+ctrI:['strings','epiano','pluck','vibes','flute']},
 
 {id:'electronic',name:'电子 Electronic',emoji:'⚡',bpm:[120,134],swing:0,
  desc:'四踩律动 · 十六分琶音 · 合成主音',
@@ -87,8 +87,8 @@ const STYLES=[
  mel:['lead','supersaw','pwmlead','pluck','epiano','bell'],bassI:['analogbass','subbass','acid','bass'],chordI:['pluck','plucksyn','epiano','lead'],
  bassPats:[{0:0,2:0,4:0,6:0},{0:0,3:0,6:0},{0:0,1:0,2:0,4:0,6:0},{0:0,2:'f',4:0,6:'t'}],
  arpPats:[[1,1,1,1,1,1,1,1],[1,0,1,1,1,0,1,1],[1,1,0,1,1,1,0,1],[1,0,1,0,1,0,1,0]],
- arpOrders:[[0,1,2],[0,1,2,1],[2,1,0],[0,2,1],[1,2,0]],padRole:true,drums:['edm','four','trap'],
- arpModes:['up','up','updown','random']},
+arpOrders:[[0,1,2],[0,1,2,1],[2,1,0],[0,2,1],[1,2,0]],padRole:true,drums:['edm','four','trap'],
+ctrI:['lead','supersaw','pwmlead','pluck','brass']},
 
 {id:'rock',name:'摇滚 Rock',emoji:'🎸',bpm:[112,144],swing:0,
  desc:'推进式律动 · 切分 riff · 失真吉他感',
@@ -97,8 +97,8 @@ const STYLES=[
  mel:['guitar','eguitar','dist','organ','lead'],bassI:['bass','acid'],chordI:['eguitar','organ','pluck'],
  bassPats:[{0:0,2:0,3:0,6:0},{0:0,3:0,5:'f',6:0},{0:0,2:0,4:0,6:0}],
  arpPats:[[1,1,0,1,1,0,1,1],[1,0,1,0,1,1,0,1],[1,1,1,1,1,1,1,1]],
- arpOrders:[[0,1,2],[0,0,1],[2,1,0],[0,2,1]],padRole:false,drums:['rock','pop','four'],
- arpModes:['up','down']},
+arpOrders:[[0,1,2],[0,0,1],[2,1,0],[0,2,1]],padRole:false,drums:['rock','pop','four'],
+ctrI:['organ','eguitar','strings','brass','lead']},
 
 {id:'hiphop',name:'嘻哈 Hip-Hop',emoji:'🎤',bpm:[78,98],swing:22,
  desc:'半速鼓点 · 松弛切分 · 电钢与低音',
@@ -107,8 +107,8 @@ const STYLES=[
  mel:['epiano','retrokeys','pluck','marimba','piano'],bassI:['analogbass','subbass','bass'],chordI:['epiano','marimba','pad'],
  bassPats:[{0:0,3:0,6:0},{0:0,2:0,6:'f'},{0:0,4:0},{0:0,1:0,3:0,6:0}],
  arpPats:[[1,0,0,1,0,1,1,0],[1,0,1,0,0,1,0,1],[1,1,0,0,1,0,1,0]],
- arpOrders:[[0,1,2],[1,2,0],[0,2,1]],padRole:false,drums:['half','bossa','trap'],
- arpModes:['updown','up']},
+arpOrders:[[0,1,2],[1,2,0],[0,2,1]],padRole:false,drums:['half','bossa','trap'],
+ctrI:['epiano','retrokeys','vibes','organ','musicbox']},
 
 {id:'trap',name:'Trap',emoji:'🔻',bpm:[128,150],swing:0,
  desc:'滑音 808 · 十六分镲片 · 冷冽短音',
@@ -117,8 +117,8 @@ const STYLES=[
  mel:['bell','lead','pwmlead','pluck','marimba','epiano'],bassI:['analogbass','subbass','acid'],chordI:['pluck','bell','marimba'],
  bassPats:[{0:0,6:0},{0:0,3:0},{0:0,5:0,6:0}],
  arpPats:[[1,0,0,1,0,1,0,0],[1,0,1,0,0,0,1,0],[1,0,0,0,1,0,0,0]],
- arpOrders:[[0,1,2],[2,1,0],[0,2,1]],padRole:true,drums:['trap','half','edm'],
- arpModes:['up','updown']},
+arpOrders:[[0,1,2],[2,1,0],[0,2,1]],padRole:true,drums:['trap','half','edm'],
+ctrI:['bell','vibes','musicbox','pluck','pwmlead']},
 
 {id:'jazz',name:'爵士 Jazz',emoji:'🎷',bpm:[96,136],swing:58,
  desc:'摇摆律动 · 七和弦色彩 · 走动低音',
@@ -128,8 +128,8 @@ const STYLES=[
  mel:['epiano','piano','bell','marimba'],bassI:['bass'],chordI:['epiano','piano','pluck'],
  bassPats:[{0:0,2:0,4:0,6:0},{0:0,2:'f',3:0,5:'t',6:0},{0:0,3:0,5:0,6:0},{0:0,1:0,3:0,4:0,6:0}],
  arpPats:[[1,0,1,1,0,1,1,0],[1,0,1,0,1,1,0,1],[1,0,0,1,0,1,0,1]],
- arpOrders:[[0,1,2],[1,2,0],[0,2,1],[2,1,0]],padRole:false,drums:['jazz','bossa','ballad'],
- arpModes:['updown','up','down']},
+arpOrders:[[0,1,2],[1,2,0],[0,2,1],[2,1,0]],padRole:false,drums:['jazz','bossa','ballad'],
+ctrI:['epiano','vibes','organ','cello','flute','marimba']},
 
 {id:'folk',name:'民谣 Folk',emoji:'🌾',bpm:[86,116],swing:0,
  desc:'分解和弦 · 温和级进 · 尼龙吉他',
@@ -138,8 +138,8 @@ const STYLES=[
  mel:['guitar','pluck','piano','marimba'],bassI:['bass'],chordI:['guitar','pluck','marimba'],
  bassPats:[{0:0,2:0,4:0,6:0},{0:0,3:0,6:0},{0:0,4:0}],
  arpPats:[[1,0,1,0,1,1,0,1],[1,1,0,1,0,1,1,0],[1,0,1,1,0,1,0,1]],
- arpOrders:[[0,1,2],[0,1,2,1],[1,2,0]],padRole:false,drums:['folk','bossa','pop'],
- arpModes:['up','updown']},
+arpOrders:[[0,1,2],[0,1,2,1],[1,2,0]],padRole:false,drums:['folk','bossa','pop'],
+ctrI:['pluck','guitar','flute','strings','musicbox']},
 
 {id:'guofeng',name:'国风 Guofeng',emoji:'🏮',bpm:[74,102],swing:0,
  desc:'五声骨架 · 留白呼吸 · 拨弦与钟磬',
@@ -149,8 +149,8 @@ const STYLES=[
  mel:['koto','pluck','bell','marimba'],bassI:['bass','subbass'],chordI:['koto','pluck','bell','marimba'],
  bassPats:[{0:0,6:0},{0:0,3:0},{0:0,4:0}],
  arpPats:[[1,0,0,1,0,0,1,0],[1,0,1,0,0,1,0,0],[1,0,0,0,1,0,0,0]],
- arpOrders:[[0,1,2],[2,1,0],[0,2,1]],padRole:true,drums:['folk','ambient','bossa'],
- arpModes:['updown','up']},
+arpOrders:[[0,1,2],[2,1,0],[0,2,1]],padRole:true,drums:['folk','ambient','bossa'],
+ctrI:['koto','flute','pluck','marimba','musicbox']},
 ];
 let styleIdx=0;
 const STYLE_BY_ID=id=>STYLES.find(s=>s.id===id)||STYLES[0];
@@ -166,7 +166,7 @@ function styleParams(s){
     prog:s.prog||null, masks:s.masks||[],
     bassPats:s.bassPats||null, arpPats:s.arpPats||null, arpOrders:s.arpOrders||null,
     mel:s.mel||null, bassI:s.bassI||null, chordI:s.chordI||null, padRole:!!s.padRole, drums:s.drums||null,
-    arpModes:s.arpModes||null,
+    ctrI:s.ctrI||null,
   };
 }
 let SP_=styleParams(STYLES[0]);
