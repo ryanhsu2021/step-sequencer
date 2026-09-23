@@ -145,12 +145,12 @@ function moveTrack(id,dir){
 /* ---- 持久化 ---- */
 const LS_KEY='polyseq.v7';
 let saveTimer=null;
-function save(){
+function save(now){
   clearTimeout(saveTimer);
-  saveTimer=setTimeout(()=>{
+  const write=()=>{
     try{
       localStorage.setItem(LS_KEY,JSON.stringify({
-        rootIdx,modeIdx,styleIdx,bpm,swingPct,volume,reverb:revPreset,revMix:revMix==null?1:revMix,
+        rootIdx,modeIdx,styleIdx,theme:themeIdx,bpm,swingPct,volume,reverb:revPreset,revMix:revMix==null?1:revMix,
         chordInst:chordInst||null,chordMute:!!chordMute,
         prog:(state.prog||[]).map(c=>({r:c.root,s:c.seventh?1:0,b:clamp(c.beats|0,1,64)})),
         progBars:progBars(),
@@ -166,7 +166,9 @@ function save(){
           vol:t.vol,pan:t.pan,mute:t.mute,solo:t.solo,fx:t.fx||'off',fxMix:t.fxMix==null?1:t.fxMix,drum:t.drum,p:t.p}))
       }));
     }catch(e){}
-  },320);
+  };
+  /* now=true 立即落盘（beforeunload 用）：防抖定时器在页面卸载前不会触发，会丢最后一次改动 */
+  if(now) write(); else saveTimer=setTimeout(write,320);
 }
 /* 旧档（v6 及更早）：两个和弦、各占 8 步 → 迁移成「2 拍 + 2 拍」的段 */
 function migrateProg(raw){
@@ -184,6 +186,7 @@ function loadSaved(){
     const raw=localStorage.getItem(LS_KEY); if(!raw) return false;
     const d=JSON.parse(raw); if(!d||!Array.isArray(d.tracks)||!d.tracks.length) return false;
     rootIdx=d.rootIdx|0; modeIdx=d.modeIdx|0; setStyle(d.styleIdx|0,true);
+    setTheme(d.theme|0,true);                      /* 主题要在建轨前生效（makeTrack 取声部色） */
     bpm=d.bpm||112; swingPct=d.swingPct||0; volume=d.volume==null?80:d.volume;
     revPreset=REV_IDS.has(d.reverb)?d.reverb:'off';
     revMix=(typeof d.revMix==='number'&&d.revMix>=0&&d.revMix<=1)?d.revMix:1;

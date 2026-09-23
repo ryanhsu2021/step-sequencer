@@ -203,7 +203,8 @@ const expose=`
   seedDefault,
   toggleInfinite,evolveOnce,infBarTick,evolveInst,evolveDrum,evolveMelody,infMelody,infTargets,INF_ROLES,
   infOn:()=>infOn,infWinGetter:()=>infNext,infCount:()=>infCount,infWin:()=>[1,6],
-  analyzeMelody,preferProg,mkChord,setProg,progBars,progBeats,chordFramesAt,inChord:null};`;
+  analyzeMelody,mkChord,setProg,progBars,progBeats,chordFramesAt,inChord:null,
+  UI_THEMES,setTheme,themeIdx:()=>themeIdx,TRACK_COLORS:()=>TRACK_COLORS};`;
 try{ vm.runInContext(js+expose,sandbox); }catch(e){ console.log('LOAD_FAIL:',e.stack); process.exit(1); }
 const T=sandbox.__T;
 let pass=0,fail=0;
@@ -1431,6 +1432,56 @@ console.log('== 19. 🎼 一键编配 v2：分析旋律 → 更贴合的编配 =
   chk('全空旋律点编配不抛错（只提示）',noNote);
 }
 
+console.log('== 19b. 🎼 编配只读和弦进行轨：绝不改写和声 ==');
+{
+  /* 回归：曾经在 progEdited=false 时 preferProg 会从旋律反推一条和声并写回
+     state.prog——而「🎲 随机同风格」按设计不置手动标记，于是用户刚挑好的进行
+     会在点「🎼 一键编配」时被悄悄换掉。现在编配只读不写。 */
+  const progSnap=()=>JSON.stringify(T.state.prog.map(c=>[c.root,c.beats,!!c.seventh]));
+  const setupMel=()=>{
+    T.setStyle(1);                                  // pop：有铺底，声部齐
+    T.state.tracks.forEach(t=>T.resetSeq(t));
+    const m=T.state.tracks[0]; T.setBars(m,2);
+    const n=T.stepsOf(m);
+    for(let s=0;s<n;s+=2) T.setStep(m,s,(s*3)%T.scLen(),false);
+    return m;
+  };
+  /* ① 随机同风格（progEdited 仍为 false）→ 编配不得换掉刚挑的进行 */
+  let bad1='';
+  for(let i=0;i<3&&!bad1;i++){
+    setupMel();
+    T.randomSameStyle();
+    const before=progSnap();
+    T.autoArrange();
+    if(progSnap()!==before) bad1='after='+progSnap()+' before='+before;
+  }
+  chk('🎲 随机同风格 → 🎼 一键编配：和弦进行轨逐段不变（级数/拍数/七音）',bad1==='',bad1);
+  /* ② 未手动改过（默认路径，最容易被「从旋律反推」污染）→ 同样不变 */
+  let bad2='';
+  for(let i=0;i<3&&!bad2;i++){
+    setupMel();
+    const before=progSnap();
+    T.autoArrange();
+    if(progSnap()!==before) bad2='after='+progSnap()+' before='+before;
+  }
+  chk('未手动改过时编配也不反推和声（和弦轨原样）',bad2==='',bad2);
+  /* ③ 手动改过（progEdited=true）→ 依旧不动 */
+  setupMel();
+  T.setProg(T.planToChords([0,4,5,3]),true);
+  const manSnap=progSnap();
+  T.autoArrange();
+  chk('手动编辑过的和弦轨编配后原样保留',progSnap()===manSnap,'手动='+manSnap);
+  /* ④ 连点 5 次：和弦轨一字不改（编配是「加声部」，不是「换和声」） */
+  setupMel();
+  const keep=progSnap();
+  let bad3='';
+  for(let i=0;i<5&&!bad3;i++){ T.autoArrange(); if(progSnap()!==keep) bad3='第'+(i+1)+'次'; }
+  chk('连点一键编配 5 次：和弦进行轨一字不改',bad3==='',bad3);
+  /* ⑤ 别为了「不改和声」把生成也丢了：伴奏声部照常产出 */
+  const parts=['贝斯','副旋律','铺底'].filter(n=>T.state.tracks.some(t=>t.name===n));
+  chk('编配照常产出伴奏声部（'+parts.join('/')+'）',parts.length>=2,'n='+parts.length);
+}
+
 console.log('\n== 20. 琶音模式（ARP）：节奏栅格 + 和弦音池图案生成 ==');
 /* ---- 隔离环境：一条声部 + 单个 I 级和弦（断言全部按当前调式动态推导，不硬编码行号） ---- */
 T.state.tracks.length=0;
@@ -1965,6 +2016,51 @@ chk('关闭后演化结果保留（不被还原）',
 /* ---- undo：关闭后一键回到开启前 ---- */
 T.undo();
 chk('undo：回到开启演化前的快照',T.infOn()===false);
+
+console.log('\n== 21. UI 配色主题：五套主题 / 变量齐全 / 声部色切换 / 持久化 ==');
+{
+  const TH=T.UI_THEMES;
+  chk('共 5 套主题（奶油默认 + 赛博霓虹 / 淡雾蓝 / 午夜紫 / 奶油大地）',TH.length===5,
+      'n='+TH.length);
+  const NEED=['--bg','--card','--ink','--on-ink','--text','--muted','--dim','--line','--soft',
+    '--ctl-bd','--ctl-hv','--ctl-line','--selbg','--chip-hv',
+    '--cell','--cell-mid','--cell-hv','--cell-line','--bar-btm','--glow1','--glow2'];
+  chk('每套主题 vars 覆盖全部 '+NEED.length+' 个衍生变量（切回默认才干净）',
+      TH.every(t=>NEED.every(k=>typeof t.vars[k]==='string'&&t.vars[k].length>0)),
+      TH.map(t=>NEED.filter(k=>!t.vars[k]).join('+')||'ok').join(' / '));
+  chk('每套主题 6 个声部色（bg/deep/ink 均为合法色串）',
+      TH.every(t=>t.tracks.length===6&&t.tracks.every(c=>[c.bg,c.deep,c.ink].every(x=>/^#[0-9a-f]{6}$/i.test(x)))),
+      TH.map(t=>t.tracks.length).join(','));
+  chk('深浅主题识别：霓虹/午夜紫是深底（bg 亮度 < 25%），其余浅底',
+      (()=>{const lum=h=>{const v=parseInt(h.slice(1),16);return (0.299*(v>>16&255)+0.587*(v>>8&255)+0.114*(v&255))/255;};
+        return lum(TH[1].vars['--bg'])<.25&&lum(TH[3].vars['--bg'])<.25
+          &&lum(TH[0].vars['--bg'])>.8&&lum(TH[2].vars['--bg'])>.8&&lum(TH[4].vars['--bg'])>.8;})(),
+      TH.map(t=>t.vars['--bg']).join(' '));
+  /* 切主题（非静默 = 用户路径）：声部色指针切换 + recolor 落到已有声部 */
+  const before=T.TRACK_COLORS();
+  T.setTheme(2,false);                               // 淡雾蓝：recolor + renderTracks + save
+  chk('setTheme(2)：themeIdx=2 且 TRACK_COLORS 指向该主题',
+      T.themeIdx()===2&&T.TRACK_COLORS()===TH[2].tracks&&before===TH[0].tracks,
+      'idx='+T.themeIdx());
+  chk('recolor 后已有声部拿到新主题的色',
+      T.state.tracks[0].color===TH[2].tracks[0],'c0='+JSON.stringify(T.state.tracks[0].color));
+  T.setTheme(4,false);
+  chk('再切奶油大地：声部色跟着换',
+      T.state.tracks[0].color===TH[4].tracks[0]&&T.state.tracks[1].color===TH[4].tracks[1],
+      'c0='+JSON.stringify(T.state.tracks[0].color));
+  T.setTheme(99,true);
+  chk('越界钳制：setTheme(99) → 最后一套',T.themeIdx()===TH.length-1,'idx='+T.themeIdx());
+  /* 持久化 round-trip */
+  T.setTheme(1,false);                               // 非静默：save() 落盘
+  const raw=sandbox.localStorage.getItem('polyseq.v7');
+  chk('save() 写入 theme 字段',raw&&JSON.parse(raw).theme===1,'theme='+(raw?JSON.parse(raw).theme:'∅'));
+  T.setTheme(0,true);
+  T.loadSaved();                                     // 从存档恢复 → 回到主题 1
+  chk('loadSaved() 恢复 theme=1（且在建轨前生效）',
+      T.themeIdx()===1&&T.TRACK_COLORS()===TH[1].tracks&&T.state.tracks[0].color===TH[1].tracks[0],
+      'idx='+T.themeIdx());
+  T.setTheme(0,true);                                // 复位默认，别影响后面的测试
+}
 
 console.log('\n=== '+(fail?fail+' 项失败':'全部通过')+'（'+pass+' 通过 / '+fail+' 失败）===');
 process.exit(fail?1:0);

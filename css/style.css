@@ -3,6 +3,14 @@
   --bg:#f1f0ec; --card:#ffffff; --ink:#141414;
   --text:#141414; --muted:#75726b; --dim:#a29f97;
   --line:#e5e3dc; --soft:#e9e7e1;
+  /* 主题可覆盖的衍生变量（setTheme 会整组写回 documentElement） */
+  --on-ink:#fff;                                 /* 墨色按钮上的文字 */
+  --ctl-bd:rgba(20,20,20,.22); --ctl-hv:rgba(20,20,20,.07); --ctl-line:rgba(20,20,20,.16);
+  --selbg:rgba(255,255,255,.88);                 /* 下拉框底 */
+  --cell:rgba(255,255,255,.42); --cell-mid:rgba(255,255,255,.6); --cell-hv:rgba(255,255,255,.95); --cell-line:rgba(20,20,20,.08);
+  --chip-hv:rgba(255,255,255,.75);
+  --bar-btm:rgba(241,240,236,.72);               /* 顶栏渐隐底色 */
+  --glow1:rgba(244,96,44,.055); --glow2:rgba(60,157,232,.05);   /* 氛围光晕 */
   --radius:26px; --rs:14px;
   --mono:ui-monospace,SFMono-Regular,"JetBrains Mono",Consolas,monospace;
   /* 阴影三档：单层大阴影偏「飘」，双层（近实远虚）更有落地质感 */
@@ -21,15 +29,15 @@ body{
 body::before{
   content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
   background:
-    radial-gradient(1100px 560px at 88% -12%,rgba(244,96,44,.055),transparent 62%),
-    radial-gradient(900px 520px at -12% 24%,rgba(60,157,232,.05),transparent 60%);
+    radial-gradient(1100px 560px at 88% -12%,var(--glow1),transparent 62%),
+    radial-gradient(900px 520px at -12% 24%,var(--glow2),transparent 60%);
 }
 .app{max-width:1120px;margin:0 auto;padding:26px 20px calc(60px + env(safe-area-inset-bottom))}
 
 /* ---------- 顶部工具条 ---------- */
 .bar{
   position:sticky;top:0;z-index:30;padding:14px 0 16px;
-  background:linear-gradient(180deg,var(--bg) 62%,rgba(241,240,236,.72));
+  background:linear-gradient(180deg,var(--bg) 62%,var(--bar-btm));
   backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
 }
 .transport{
@@ -44,14 +52,14 @@ body::before{
 .tctl b{color:var(--ink);font-family:var(--mono);font-size:12.5px;min-width:34px;text-align:right}
 .btn{
   font:inherit;font-size:13px;font-weight:650;color:var(--ink);cursor:pointer;border-radius:999px;
-  padding:8px 15px;background:transparent;border:1.5px solid rgba(20,20,20,.22);transition:.14s;white-space:nowrap;
+  padding:8px 15px;background:transparent;border:1.5px solid var(--ctl-bd);transition:.14s;white-space:nowrap;
 }
-.btn:hover{background:rgba(20,20,20,.07);transform:translateY(-1px)}
+.btn:hover{background:var(--ctl-hv);transform:translateY(-1px)}
 .btn:active{transform:scale(.97)}
-.btn.primary{background:var(--ink);border-color:var(--ink);color:#fff;min-width:92px;
+.btn.primary{background:var(--ink);border-color:var(--ink);color:var(--on-ink);min-width:92px;
   box-shadow:0 6px 16px rgba(20,20,20,.22)}
 .btn.primary.playing{background:#f4602c;border-color:#f4602c;box-shadow:0 6px 16px rgba(244,96,44,.35)}
-.btn.accent{background:var(--ink);border-color:var(--ink);color:#fff}
+.btn.accent{background:var(--ink);border-color:var(--ink);color:var(--on-ink)}
 .btn.ghost{border-style:dashed}
 /* ♾ 无限演化：激活态青绿色常亮 + 每次演化时按钮心跳一下 */
 .btn.inf-on{background:#0e7c66;border-color:#0e7c66;color:#fff;box-shadow:0 4px 12px rgba(14,124,102,.3)}
@@ -62,44 +70,44 @@ body::before{
   100%{box-shadow:0 4px 12px rgba(14,124,102,.3);transform:scale(1)}
 }
 select{
-  font:inherit;font-size:12px;font-weight:600;color:#141414;background-color:rgba(255,255,255,.88);
+  font:inherit;font-size:12px;font-weight:600;color:var(--ink);background-color:var(--selbg);
   border:1.5px solid rgba(20,20,20,.16);border-radius:999px;padding:5px 24px 5px 10px;outline:none;cursor:pointer;transition:.14s;
   -webkit-appearance:none;appearance:none;
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='6'%3E%3Cpath d='M1 1l3.5 3.5L8 1' stroke='%2375726b' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-repeat:no-repeat;background-position:right 10px center;background-size:9px 6px;
 }
-select:hover{border-color:rgba(20,20,20,.4)}
+select:hover{border-color:color-mix(in srgb,var(--ink) 42%,transparent)}
 select:focus-visible{border-color:var(--ink);box-shadow:0 0 0 3px rgba(20,20,20,.1)}
 /* 风格选择：整条工具行里最重的控件之一，给它一身墨色胶囊（白色箭头变体） */
 .tctl.style{gap:6px;font-weight:650;color:var(--ink)}
 .tctl.style select{
-  background-color:#141414;color:#fff;border-color:#141414;font-weight:700;letter-spacing:.2px;padding:6px 26px 6px 12px;
+  background-color:var(--ink);color:var(--on-ink);border-color:var(--ink);font-weight:700;letter-spacing:.2px;padding:6px 26px 6px 12px;
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='6'%3E%3Cpath d='M1 1l3.5 3.5L8 1' stroke='%23ffffff' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
-.tctl.style select:hover{background-color:#2a2a2a}
+.tctl.style select:hover{background-color:color-mix(in srgb,var(--ink) 84%,var(--bg))}
 /* 鼓预设：风格推荐置顶标星，其余收在「更多」里 */
 .chip.btn-like.star{border-color:currentColor;font-weight:700}
 .tc-meta .chip.btn-like.alt{display:none}
 .tc-meta.showall .chip.btn-like.alt{display:inline-flex}
 input[type=range]{-webkit-appearance:none;appearance:none;width:84px;height:18px;background:transparent;cursor:pointer}
-input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:3px;background:rgba(20,20,20,.16)}
+input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:3px;background:var(--ctl-line)}
 input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;margin-top:-4.5px;border-radius:50%;
   background:var(--ink);box-shadow:0 1px 4px rgba(0,0,0,.3)}
 input[type=range]:hover::-webkit-slider-thumb{transform:scale(1.15)}
-.sep{width:1px;align-self:stretch;background:rgba(20,20,20,.12);margin:2px 3px}
+.sep{width:1px;align-self:stretch;background:var(--ctl-line);margin:2px 3px}
 /* ⚙ 更多设置（仅手机端显示）：收起时顶栏一行放下「播放 · BPM · ⚙」 */
 .more-btn{
   display:none;width:40px;height:40px;border-radius:50%;flex:none;cursor:pointer;
   font:inherit;font-size:16px;line-height:1;color:var(--ink);
-  background:transparent;border:1.5px solid rgba(20,20,20,.22);place-items:center;transition:.14s;
+  background:transparent;border:1.5px solid var(--ctl-bd);place-items:center;transition:.14s;
 }
-.more-btn:hover{background:rgba(20,20,20,.07)}
-.transport.open .more-btn{background:var(--ink);border-color:var(--ink);color:#fff}
+.more-btn:hover{background:var(--ctl-hv)}
+.transport.open .more-btn{background:var(--ink);border-color:var(--ink);color:var(--on-ink)}
 
 #toast{
   position:fixed;left:50%;top:16px;transform:translate(-50%,-14px);z-index:60;
   padding:11px 20px;border-radius:999px;font-size:13px;font-weight:600;opacity:0;pointer-events:none;transition:.26s;
-  background:var(--ink);color:#fff;box-shadow:0 14px 34px rgba(0,0,0,.28);
+  background:var(--ink);color:var(--on-ink);box-shadow:0 14px 34px rgba(0,0,0,.28);
 }
 #toast.show{opacity:1;transform:translate(-50%,0)}
 /* ---------- 和弦进行轨（墨色主控卡） ---------- */
@@ -290,11 +298,11 @@ input[type=range]:hover::-webkit-slider-thumb{transform:scale(1.15)}
 .chip{
   display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:5px 12px;
   font-size:11.5px;font-weight:600;letter-spacing:.2px;
-  background:rgba(255,255,255,.5);border:1.5px solid color-mix(in srgb,currentColor 26%,transparent);color:inherit;
+  background:var(--cell);border:1.5px solid color-mix(in srgb,currentColor 26%,transparent);color:inherit;
 }
 .chip .v{font-family:var(--mono);font-size:11px}
 .chip.btn-like{cursor:pointer;transition:.13s;background:transparent}
-.chip.btn-like:hover{background:rgba(255,255,255,.75)}
+.chip.btn-like:hover{background:var(--chip-hv)}
 .chip.btn-like.on{background:var(--tci);color:var(--tcb);border-color:var(--tci)}
 .chip input[type=range]{width:74px}
 /* 小节数：卡片上的分段小控件 */
@@ -303,20 +311,20 @@ input[type=range]:hover::-webkit-slider-thumb{transform:scale(1.15)}
   font:inherit;font-size:11.5px;font-weight:700;cursor:pointer;color:inherit;
   border:none;background:transparent;border-radius:999px;padding:3px 8px;opacity:.5;transition:.12s;
 }
-.seg-b:hover{opacity:.9;background:rgba(255,255,255,.5)}
+.seg-b:hover{opacity:.9;background:var(--cell)}
 .seg-b.on{background:var(--tci);color:var(--tcb);opacity:1}
 
 /* ---------- 步进音序器网格（行＝音级 · 列＝步） ---------- */
-.stepwrap{overflow-x:auto;padding:2px 2px 6px;scrollbar-width:thin;scrollbar-color:#cfccc3 transparent}
+.stepwrap{overflow-x:auto;padding:2px 2px 6px;scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--muted) 45%,transparent) transparent}
 .stepwrap::-webkit-scrollbar{height:5px}
-.stepwrap::-webkit-scrollbar-thumb{background:#cfccc3;border-radius:4px}
+.stepwrap::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--muted) 45%,transparent);border-radius:4px}
 /* 分行模式（窄屏自适应）：一行的步数从 16 降到 8 / 4，彻底免去横向滚动 */
 .stepwrap.multiline{overflow-x:visible;padding-bottom:0}
 .sqseg+.sqseg{margin-top:11px}
 .dlblock+.dlblock{margin-top:12px}
 .dlblock .dhrow{margin-bottom:3px}
 .dlblock .dcells-all{overflow-x:visible}
-.dcells-all{scrollbar-width:thin;scrollbar-color:#cfccc3 transparent}
+.dcells-all{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--muted) 45%,transparent) transparent}
 .dcells-all::-webkit-scrollbar{height:5px}
 /* 步号表头：左上角小节/步范围标签 + 步号行（与网格列一一对齐） */
 .shead{display:flex;align-items:center;gap:10px;margin-bottom:5px}
@@ -342,13 +350,13 @@ input[type=range]:hover::-webkit-slider-thumb{transform:scale(1.15)}
 }
 .sqcell{
   flex:1 1 0;min-width:18px;height:20px;border-radius:6px;cursor:pointer;touch-action:none;
-  background:rgba(255,255,255,.42);
-  box-shadow:inset 0 0 0 1px rgba(20,20,20,.08);
+  background:var(--cell);
+  box-shadow:inset 0 0 0 1px var(--cell-line);
   transition:background .1s,transform .1s,box-shadow .1s;
 }
 .sqcell.gap{margin-left:6px}
-.sqcell.mid{background:rgba(255,255,255,.6)}            /* 中音区稍亮，便于定位 */
-.sqcell:hover{background:rgba(255,255,255,.95)}
+.sqcell.mid{background:var(--cell-mid)}            /* 中音区稍亮，便于定位 */
+.sqcell:hover{background:var(--cell-hv)}
 .sqcell.on{
   background:color-mix(in srgb,var(--tcd) calc(46% + var(--v,0.82) * 54%),rgba(255,255,255,.2));
   box-shadow:0 2px 7px color-mix(in srgb,var(--tcd) 50%,rgba(0,0,0,.25));
@@ -379,7 +387,7 @@ input[type=range]:hover::-webkit-slider-thumb{transform:scale(1.15)}
   flex:1;text-align:center;font-family:var(--mono);font-size:10px;letter-spacing:.5px;
   color:color-mix(in srgb,var(--tci) 52%,transparent);
 }
-.dcell{flex:1;height:17px;border-radius:6px;background:rgba(255,255,255,.5);cursor:pointer;
+.dcell{flex:1;height:17px;border-radius:6px;background:var(--cell);cursor:pointer;
   box-shadow:inset 0 0 0 1px rgba(20,20,20,.07);transition:background .1s,transform .1s}
 .dcell.gap{margin-left:6px}
 .dcell:hover{background:rgba(255,255,255,.95)}
@@ -481,8 +489,8 @@ footer b{color:var(--ink)}
 footer .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:6px 26px}
 kbd{font-family:var(--mono);font-size:10.5px;background:var(--soft);border:1px solid var(--line);border-radius:5px;padding:1px 5px;color:var(--ink)}
 ::-webkit-scrollbar{width:10px;height:8px}
-::-webkit-scrollbar-thumb{background:#cfccc3;border-radius:6px;border:2px solid transparent;background-clip:padding-box}
-::-webkit-scrollbar-thumb:hover{background:#b4b1a7;background-clip:padding-box}
+::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--muted) 45%,transparent);border-radius:6px;border:2px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background:color-mix(in srgb,var(--muted) 65%,transparent);background-clip:padding-box}
 ::-webkit-scrollbar-track{background:transparent}
 /* ---------- 触屏基础 ---------- */
 button,select,.chip,.seg-b,.cc-btn,.cc-deg,.crib,.addchip{touch-action:manipulation}   /* 去除双击缩放延迟 */

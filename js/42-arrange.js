@@ -7,8 +7,9 @@
    v2 的思路（三件事）：
      1. 旋律画像 analyzeMelody()：把主旋律读成「强拍音级 / 落音 / 乐句边界 /
         音域重心 / 呼吸点」——这是后面所有声部做决定的依据。
-     2. 和声锁定 preferProg()：如果用户没手动改过和弦轨，用 deriveProgression()
-        从旋律反推一条和声（比纯风格随机更贴合实听），并写明推导来源。
+     2. 和声锁定：和声只有一个来源——和弦进行轨。编配**只读不写**（progFor()），
+        绝不改写和弦轨。想换和声用和弦卡上的两个按钮：
+        🎲 随机同风格 / ⤵ 从旋律推导（deriveProgression）。
    v3：编配不再产出「琶音器」（与卡片 ARP 开关语义纠缠），织体层换成「副旋律」。
    v4（本轮）：把「专业 / 贴风格 / 融合」三件事落到可检验的规则上——
      · **风格语法**：每个风格都有自己的低音语法（BASS_SKEL：长音 / 根-五 /
@@ -116,50 +117,14 @@ function analyzeMelody(tr,frames){
             for(const o of onset){ const d=Math.abs(o.s-s); if(d<bd){bd=d;bst=o;} } return bst.deg; }};
 }
 
-/* ============ 2. 和声来源 ============
-   用户手动改过和弦轨 → 完全尊重原样；没改过 → 从旋律反推一条（deriveProgression），
-   反推结果通常是 2 拍粒度的细分段，这里按 1 小节归一成段，保证每个和弦至少持续一拍。 */
-function preferProg(mel){
-  if(state.progEdited) return {prog:progFor(),derived:false};
-  try{
-    const d=deriveProgression(mel.seq||[]);
-    const L=scLen(), total=progBeats();
-    let segs=d.map(c=>({root:((((c.root|0)%L)+L)%L),seventh:!!SP_.seventh,beats:c.beats|0}));
-    if(!segs.length) return {prog:progFor(),derived:false};
-    let sum=segs.reduce((a,c)=>a+c.beats,0);
-    /* 拍数对齐到和弦轨长度：多了削尾、少了取模补满 */
-    while(sum>total&&segs.length){
-      const last=segs[segs.length-1];
-      const cut=Math.min(last.beats,sum-total);
-      last.beats-=cut; sum-=cut;
-      if(last.beats<=0) segs.pop();
-    }
-    if(!segs.length) return {prog:progFor(),derived:false};
-    if(sum<total){
-      const base=segs.map(c=>({...c}));
-      let i=0;
-      while(sum<total){
-        const c=base[i%base.length];
-        const b=Math.min(c.beats||1,total-sum);
-        segs.push({root:c.root,seventh:c.seventh,beats:b});
-        sum+=b; i++;
-        if(i>256) break;
-      }
-    }
-    const out=segs.map(c=>mkChord(c.root,c.beats,c.seventh));
-    return {prog:fitArrangedProg(out),derived:true};
-  }catch(e){ return {prog:progFor(),derived:false}; }
-}
-/* 去掉相邻同根、合并过短段，让编配用的和声更「干净」 */
-function fitArrangedProg(p){
-  const out=[];
-  for(const c of p){
-    const q=out[out.length-1];
-    if(q&&q.root===c.root&&q.seventh===c.seventh) q.beats+=c.beats;
-    else out.push({root:c.root,seventh:c.seventh,tones:c.tones||chordTones(c.root,c.seventh),beats:c.beats});
-  }
-  return out.map(c=>({root:c.root,seventh:c.seventh,beats:c.beats,tones:chordTones(c.root,c.seventh)}));
-}
+/* ============ 2. 和声来源：只读和弦进行轨 ============
+   ⚠️ 编配**绝不改写和弦进行轨**。v2 曾在这里做「未手动改过 → 用 deriveProgression
+   从旋律反推一条并写回 state.prog」；但「🎲 随机同风格」按设计不置 progEdited
+   （它仍属风格派生），于是用户刚挑好的进行会在点一键编配时被悄悄换掉。
+   和弦轨的所有权只属于和弦卡上的两个按钮：
+     · 🎲 随机同风格（randomSameStyle）——换级数不换个数与拍数
+     · ⤵ 从旋律推导（deriveProgression）——标记为手动
+   编配只做一件事：读 progFor()，然后写贝斯 / 副旋律 / 铺底 / 鼓组。 */
 
 /* ============ 2b. 音区模型（三层避让的唯一真相） ============
    ⚠️ 本工程 8 行 × 7 声，两个数不整除：[0]=C4 → [7]=C3，每行降一个音级。
@@ -181,7 +146,7 @@ function fitArrangedProg(p){
 /* 三层各自的「取行偏好」：在候选行里离这个偏好越近越优先 */
 const ARR_LAYER={
   bass:{lo:0,hi:ROWS-1,pref:ROWS-1,oct:-1},   // 贝斯：整个键盘的最低音区（再叠 oct 的 -1 八度）
-  pad: {lo:0,hi:ROWS-1,pref:ROWS-3,oct:0},    // 铺底：偏低的中间层
+  pad: {lo:0,hi:ROWS-1,pref:ROWS-4,oct:0},    // 铺底：偏低的中间层（register 锚点，见 fillPad）
   arp: {lo:0,hi:ROWS-4,pref:0,     oct:0},    // 琶音：偏高的织体层（示例曲用，编配已不产出）
   ctr: {lo:0,hi:ROWS-1,pref:ROWS-2,oct:0},    // 副旋律：实际行号由「主旋律行 + 2~4」实时推出，这里只给兜底重心
 };
@@ -616,14 +581,21 @@ function fillCounter(t,M,prog){
 }
 
 /* ============ 5. 铺底：长音层（风格织体） ============
-   只落在和弦骨架音（根音优先，其次五音），托住全曲。音域重心居中
-   （ARR_LAYER.pad），落在贝斯之上、副旋律之下，形成三层的中间那层。
+   只落在和弦骨架音，托住全曲。音域重心居中（ARR_LAYER.pad），
+   落在贝斯之上、副旋律之下，形成三层的中间那层。
    v4 起按风格的 pad 织体分化（此前九种风格完全一样）：
      drone 持续长音（氛围 / 国风：段首一个长音，长段中间再叠一次五音）
      hold  段首长音（最稳的通用床）
      swell 稍晚进（Trap：错过拍点半步再进来，避开与贝斯的板正感）
      stab  反拍短音（电子：每拍后半的短音，与贝斯正拍错开，织体「跳」起来）
-   力度永远最轻（.52–.62）——铺底是「床」，不该与人争。 */
+   力度永远最轻（.52–.62）——铺底是「床」，不该与人争。
+
+   ⚠️ 取音必须是 **register 锚定**（挑「离偏好行最近的可用和弦音」），不能「根音优先」：
+   行号与级数是 (7-级数)%L 的映射，同一和弦的根音行完全由级数决定——I 级在第 7 行（最低），
+   V 级却只能落在第 2 行（很高）。编配现在还跟着用户的任意和弦轨走，只要进行里多几个
+   V / vi / vii，铺底就被整段抬到 2 附近（实测平均行 2.08，跌破「居中」区间），
+   听起来是忽高忽低地跳。改成 register 锚定后，任何进行下都稳坐在同一带里，
+   同时仍是 100% 和弦内音（就近 voicing、线条不跳，本就是这个声部的正确写法）。 */
 function fillPad(t,M,prog){
   const n=stepsOf(t);
   const {lo:P_LO,hi:P_HI,pref:P_PREF}=ARR_LAYER.pad;
@@ -631,12 +603,23 @@ function fillPad(t,M,prog){
   const tiled=progTiled(prog,n);
   const mode=SP_.pad||'hold';
   t.seq=new Array(n).fill(-1);
-  const preRow=s=>{ for(let k=s-1;k>=0;k--) if(t.seq[k]>=0) return t.seq[k]; return P_PREF; };
   /* 段内锚点：段首取重心 P_PREF（不要跨段取「上一个音」——那会让铺底一路往高处
-     累积漂移，实测平均行从 5 掉到 2.05，与「居中偏低」的定位不符） */
-  const put=(s,deg,pref)=>{
+     累积漂移，实测平均行从 5 掉到 2.05，与「居中偏低」的定位不符）。
+     hint（可选）＝ 当前织体想要的音级（stab 的根五交替）：同等距离时额外优先它。 */
+  const put=(s,pref,hint)=>{
     if(s<0||s>=n||t.seq[s]!==-1) return -1;
-    t.seq[s]=nearestRow(P_LO,P_HI,deg,pref==null?P_PREF:pref,CV.tonesOf(s));
+    const pf=pref==null?P_PREF:pref, tones=CV.tonesOf(s), rt=CV.rootOf(s);
+    const fif=(rt+M.step5)%M.L;
+    let best=-1,bs=1e9;
+    for(let r=P_LO;r<=P_HI;r++){
+      const d=degOfRow(r);                              // 已是 0..L-1
+      if(tones.indexOf(d)<0) continue;                  // 只在和弦内音里挑
+      let sc=Math.abs(r-pf)*10;                          // 主判据：离偏好行越近越好
+      if(d===rt) sc-=1; else if(d===fif) sc-=.5;         // 同等距离时：根音 > 五音（和声清楚）
+      if(hint!=null&&d===hint) sc-=1;
+      if(sc<bs){ bs=sc; best=r; }
+    }
+    t.seq[s]=best>=0?best:nearestRow(P_LO,P_HI,rt,pf,tones);
     return t.seq[s];
   };
   let base=0;
@@ -644,7 +627,7 @@ function fillPad(t,M,prog){
     const span=ch.beats*4, ts=ch.tones;
     if(base>=n) break;
     let prev=-1;                                  // 本段内的前一个铺底音（段内连接）
-    const seg=(s,deg)=>{ const r=put(s,deg,prev<0?P_PREF:prev); if(r>=0) prev=r; return r; };
+    const seg=(s,hint)=>{ const r=put(s,prev<0?P_PREF:prev,hint); if(r>=0) prev=r; return r; };
     if(ts&&ts.length){
       if(mode==='stab'){
         /* 电子的反拍短音：每拍后半的 8 分位置，根音与五音交替 */
@@ -664,7 +647,7 @@ function fillPad(t,M,prog){
           seg(s,(i===0)?ch.root:((ch.root+M.step5)%M.L));
           /* 持续长音：长段中间再叠一次五音（换气感的轻微起伏） */
           if(mode==='drone'&&span>=16&&Math.random()<.5)
-            put(Math.min(s+Math.floor(span/2),n-1),((ch.root+M.step5)%M.L),null);
+            put(Math.min(s+Math.floor(span/2),n-1),null,((ch.root+M.step5)%M.L));
         }
       }
     }
@@ -782,11 +765,9 @@ function autoArrange(){
   const mel=pickMelodyTrack();
   if(!mel||!mel.seq.some(v=>v>=0)){ toast('请先在某个声部摆上几个音，再点一键编配'); return; }
   pushUndo();
-  const src=preferProg(mel);
-  /* 先落盘和声、再生成：setProg 里的 fitProg 会重新平铺和弦段，
-     所以必须「写回 state.prog 之后再读回来」，否则生成用的和声与存档/画面里的会错位。 */
-  if(src.derived) setProg(src.prog.map(c=>mkChord(c.root,c.beats,c.seventh)),false);
-  const prog=progFor();                       // 以 state.prog 为准（已含 fitProg 的平铺结果）
+  /* 和声只读和弦进行轨：编配不改写它（想换和声用和弦卡上的 🎲 / ⤵）。
+     progFor() 已是 fitProg 平铺后的结果，逐步取和弦时直接用它。 */
+  const prog=progFor();
   const frames=chordFramesAt(prog,stepsOf(mel));
   const M=analyzeMelody(mel,frames);
   /* ① 先鼓：底鼓位置是「低频合一」与声部交错的基准（鼓组也照当前风格选） */
@@ -817,7 +798,7 @@ function autoArrange(){
   renderTracks();
   save();
   const info='分析「'+mel.name+'」：'+M.onset.length+' 个重音 · '+M.cad.length+' 处句尾'
-    +(src.derived?' · 和声由旋律反推':' · 沿用你的和弦轨');
+    +' · 和声沿用和弦进行轨（不改写）';
   toast('🎼 '+STYLE().emoji+' '+info+' → '+(made.length?made.map(x=>x.txt).join(' + '):'（无空闲声部）')
     +(d?' + 鼓组('+d.drum+')':'')+' ——再点一次会不同（↶ 可撤销）');
 }

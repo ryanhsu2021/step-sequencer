@@ -79,6 +79,9 @@ const rootSel=$('rootSel'), modeSel=$('modeSel'), styleSel=$('styleSel');
 ROOT_NAMES.forEach((n,i)=>rootSel.add(new Option(n,i)));
 MODES.forEach((m,i)=>modeSel.add(new Option(m.name,i)));
 STYLES.forEach((s,i)=>styleSel.add(new Option(s.emoji+' '+s.name,i)));
+const themeSel=$('themeSel');
+UI_THEMES.forEach((t,i)=>themeSel.add(new Option(t.emoji+' '+t.name,i)));
+themeSel.addEventListener('change',()=>setTheme(+themeSel.value));
 const styleTip=()=>{const s=STYLE();return s.name+' · '+s.desc+' · 建议 BPM '+s.bpm[0]+'–'+s.bpm[1]+(s.swing>5?' · 摇摆 '+s.swing+'%':'');};
 styleSel.title=styleTip();
 rootSel.addEventListener('change',()=>{rootIdx=+rootSel.value;refreshAll();renderChord();save();});
@@ -110,7 +113,7 @@ window.addEventListener('keydown',e=>{
   if(ae&&(ae.tagName==='BUTTON'||ae.tagName==='INPUT'||ae.tagName==='SELECT')) return;
   e.preventDefault(); togglePlay();
 });
-window.addEventListener('beforeunload',()=>{ if(!audioCtx) save(); });
+window.addEventListener('beforeunload',()=>{ if(!audioCtx) save(true); });
 
 /* ============ 启动 ============ */
 (function init(){
@@ -122,6 +125,7 @@ window.addEventListener('beforeunload',()=>{ if(!audioCtx) save(); });
   $('revMix').value=Math.round((revMix==null?1:revMix)*100); $('revMixVal').textContent=$('revMix').value+'%';
   rootSel.value=String(rootIdx); modeSel.value=String(modeIdx);
   styleSel.value=String(styleIdx); styleSel.title=styleTip();
+  themeSel.value=String(themeIdx);
   renderTracks();
   const hp=document.querySelector('footer details.help');
   if(hp&&window.innerWidth>900) hp.open=true;          // 宽屏默认展开使用说明，手机端收起省空间

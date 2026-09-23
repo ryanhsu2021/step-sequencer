@@ -312,11 +312,21 @@ function optimizeMelody(tr,fresh){
   const minDist=Math.min(...cands.map(c=>c.dist));
   const pool=cands.filter(c=>c.dist===minDist);
   pool.sort((a,b)=>b.res.value-a.res.value);
-  const band=pool.filter(c=>pool[0].res.value-c.res.value<=(fresh?12:8));
+  let band=pool.filter(c=>pool[0].res.value-c.res.value<=(fresh?12:8));
+  /* 退化保护：同密度档里只有一条落进质量带时，选取完全确定 → 连点就成了「不动点」。
+     实测这类点击占 84%（典型：pool 4 条、band 只剩 1 条，输出恒定 22 音）。
+     此时放宽到整个同密度档（这一档本来就都合法：密度已对齐、DP 已过和弦与锚点约束），
+     并在其中均匀抽取——「连点每次不同」比「每次都是同一条最优」重要得多；
+     代价只是偶尔略退一步分数。正常情况（带内 ≥2）仍走 55/30/15 的质量偏置。 */
+  let widened=false;
+  if(band.length<2&&pool.length>1){ band=pool; widened=true; }
   let bi=0;
   if(band.length>1){
-    const r=Math.random();
-    bi=r<.55?0:(r<.85?Math.min(1,band.length-1):Math.min(2,band.length-1));
+    if(widened) bi=(Math.random()*band.length)|0;
+    else{
+      const r=Math.random();
+      bi=r<.55?0:(r<.85?Math.min(1,band.length-1):Math.min(2,band.length-1));
+    }
   }
   const best=band[bi].res.mel;
   const keep=best.map(v=>v>=0);                      // DP 自己摆的音（非润色补的）

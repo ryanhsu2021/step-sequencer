@@ -198,13 +198,104 @@ function setStyle(i,quiet){
   }
 }
 
-/* 参考配色：高饱和马卡龙色块（bg=卡片底，deep=激活深色，ink=卡片上文字色） */
-const TRACK_COLORS=[
-  {bg:'#cbb6f7',deep:'#5b3fd0',ink:'#191322'},   /* 紫 */
-  {bg:'#def363',deep:'#5a6a08',ink:'#181b04'},   /* 柠檬 */
-  {bg:'#4c53e5',deep:'#181d78',ink:'#ffffff'},   /* 宝蓝 */
-  {bg:'#f4602c',deep:'#8e2a0c',ink:'#ffffff'},   /* 橘 */
-  {bg:'#f9c9dc',deep:'#d64b78',ink:'#241019'},   /* 粉 */
-  {bg:'#9fe0d3',deep:'#12796a',ink:'#0e211d'},   /* 薄荷 */
+/* ============ 全局 UI 配色主题 ============
+   vars 整组覆盖 css/style.css :root 里的同名衍生变量（必须给全，切回来才干净）；
+   tracks 是六个声部的循环配色（bg=卡片底 · deep=激活音块 · ink=卡上文字）。
+   setTheme() 把 vars 逐条写到 documentElement，并把 TRACK_COLORS 指向该主题的
+   声部色，再由 recolor() 落到每条声部（mixer 色带等随 renderTracks 刷新）。 */
+const UI_THEMES=[
+  {id:'cream',name:'奶油马卡龙',emoji:'🍦',vars:{
+    '--bg':'#f1f0ec','--card':'#ffffff','--ink':'#141414','--on-ink':'#fff',
+    '--text':'#141414','--muted':'#75726b','--dim':'#a29f97','--line':'#e5e3dc','--soft':'#e9e7e1',
+    '--ctl-bd':'rgba(20,20,20,.22)','--ctl-hv':'rgba(20,20,20,.07)','--ctl-line':'rgba(20,20,20,.16)',
+    '--selbg':'rgba(255,255,255,.88)','--chip-hv':'rgba(255,255,255,.75)',
+    '--cell':'rgba(255,255,255,.42)','--cell-mid':'rgba(255,255,255,.6)','--cell-hv':'rgba(255,255,255,.95)','--cell-line':'rgba(20,20,20,.08)',
+    '--bar-btm':'rgba(241,240,236,.72)',
+    '--glow1':'rgba(244,96,44,.055)','--glow2':'rgba(60,157,232,.05)',
+  },tracks:[
+    {bg:'#cbb6f7',deep:'#5b3fd0',ink:'#191322'},   /* 紫 */
+    {bg:'#def363',deep:'#5a6a08',ink:'#181b04'},   /* 柠檬 */
+    {bg:'#4c53e5',deep:'#181d78',ink:'#ffffff'},   /* 宝蓝 */
+    {bg:'#f4602c',deep:'#8e2a0c',ink:'#ffffff'},   /* 橘 */
+    {bg:'#f9c9dc',deep:'#d64b78',ink:'#241019'},   /* 粉 */
+    {bg:'#9fe0d3',deep:'#12796a',ink:'#0e211d'},   /* 薄荷 */
+  ]},
+  {id:'neon',name:'赛博霓虹',emoji:'🌃',vars:{
+    '--bg':'#0a0d22','--card':'#141833','--ink':'#e8ecff','--on-ink':'#0a0d22',
+    '--text':'#dde2f7','--muted':'#8f96bf','--dim':'#5d648e','--line':'#252b52','--soft':'#1b2140',
+    '--ctl-bd':'rgba(210,220,255,.30)','--ctl-hv':'rgba(140,160,255,.12)','--ctl-line':'rgba(210,220,255,.18)',
+    '--selbg':'rgba(30,36,70,.85)','--chip-hv':'rgba(140,160,255,.25)',
+    '--cell':'rgba(120,150,255,.10)','--cell-mid':'rgba(120,150,255,.16)','--cell-hv':'rgba(160,190,255,.30)','--cell-line':'rgba(160,190,255,.14)',
+    '--bar-btm':'rgba(10,13,34,.72)',
+    '--glow1':'rgba(34,211,238,.10)','--glow2':'rgba(217,70,239,.12)',
+  },tracks:[
+    {bg:'#10173d',deep:'#33d6ff',ink:'#d8f6ff'},   /* 深蓝卡 · 霓虹青音块 */
+    {bg:'#22d3e0',deep:'#076e7a',ink:'#02282c'},   /* 亮青 */
+    {bg:'#1c2fc4',deep:'#0a1256',ink:'#dfe7ff'},   /* 电光蓝 */
+    {bg:'#ff4433',deep:'#8c1005',ink:'#ffe6df'},   /* 霓虹红 */
+    {bg:'#a83bf0',deep:'#4b0b7d',ink:'#f8e6ff'},   /* 品红紫 */
+    {bg:'#2bd9b4',deep:'#0b6f5b',ink:'#03322a'},   /* 荧光薄荷 */
+  ]},
+  {id:'haze',name:'淡雾蓝',emoji:'🌫️',vars:{
+    '--bg':'#edeff5','--card':'#ffffff','--ink':'#1b2130','--on-ink':'#fff',
+    '--text':'#242a3a','--muted':'#6d7488','--dim':'#9ba1b3','--line':'#dfe2ec','--soft':'#e9ebf3',
+    '--ctl-bd':'rgba(27,33,48,.22)','--ctl-hv':'rgba(27,33,48,.06)','--ctl-line':'rgba(27,33,48,.15)',
+    '--selbg':'rgba(255,255,255,.88)','--chip-hv':'rgba(255,255,255,.8)',
+    '--cell':'rgba(255,255,255,.55)','--cell-mid':'rgba(255,255,255,.72)','--cell-hv':'#ffffff','--cell-line':'rgba(27,33,48,.07)',
+    '--bar-btm':'rgba(237,239,245,.72)',
+    '--glow1':'rgba(99,102,241,.06)','--glow2':'rgba(14,165,233,.06)',
+  },tracks:[
+    {bg:'#c8cef6',deep:'#4753b5',ink:'#151a36'},   /* 雾蓝紫 */
+    {bg:'#a8cdb6',deep:'#4d7a5e',ink:'#112418'},   /* 灰绿 */
+    {bg:'#7189ad',deep:'#2b3f62',ink:'#ffffff'},   /* 灰蓝 */
+    {bg:'#e08a60',deep:'#96431c',ink:'#ffffff'},   /* 陶土橘 */
+    {bg:'#f0c8d3',deep:'#ad6379',ink:'#381320'},   /* 藕粉 */
+    {bg:'#b7dcd1',deep:'#528e7d',ink:'#0f2f29'},   /* 雾薄荷 */
+  ]},
+  {id:'midnight',name:'午夜紫',emoji:'🌌',vars:{
+    '--bg':'#141118','--card':'#1e1a26','--ink':'#f0eaf8','--on-ink':'#141118',
+    '--text':'#e4def0','--muted':'#9c93ae','--dim':'#675e7c','--line':'#2f2939','--soft':'#252031',
+    '--ctl-bd':'rgba(230,220,250,.26)','--ctl-hv':'rgba(200,160,255,.10)','--ctl-line':'rgba(230,220,250,.16)',
+    '--selbg':'rgba(38,32,50,.85)','--chip-hv':'rgba(200,160,255,.22)',
+    '--cell':'rgba(200,170,255,.08)','--cell-mid':'rgba(200,170,255,.13)','--cell-hv':'rgba(220,190,255,.28)','--cell-line':'rgba(200,170,255,.12)',
+    '--bar-btm':'rgba(20,17,24,.72)',
+    '--glow1':'rgba(168,85,247,.14)','--glow2':'rgba(59,130,246,.09)',
+  },tracks:[
+    {bg:'#262032',deep:'#a78bfa',ink:'#efe9ff'},   /* 暗卡 · 柔紫音块 */
+    {bg:'#b7bac2',deep:'#43474f',ink:'#0f1013'},   /* 银灰 */
+    {bg:'#1a2445',deep:'#0b1330',ink:'#d5ddfa'},   /* 暗夜蓝 */
+    {bg:'#7c1330',deep:'#3f0715',ink:'#ffd9e2'},   /* 深绯红 */
+    {bg:'#a12e81',deep:'#4e0d3b',ink:'#ffe4f4'},   /* 洋红 */
+    {bg:'#123540',deep:'#071e26',ink:'#cceef4'},   /* 暗青 */
+  ]},
+  {id:'morandi',name:'奶油大地',emoji:'🧸',vars:{
+    '--bg':'#f2ede2','--card':'#f9f6ee','--ink':'#3a2f22','--on-ink':'#fff',
+    '--text':'#3a2f22','--muted':'#8a7d69','--dim':'#b1a58f','--line':'#e2dbc8','--soft':'#ebe5d4',
+    '--ctl-bd':'rgba(58,47,34,.26)','--ctl-hv':'rgba(58,47,34,.07)','--ctl-line':'rgba(58,47,34,.17)',
+    '--selbg':'rgba(255,253,246,.9)','--chip-hv':'rgba(255,253,246,.82)',
+    '--cell':'rgba(255,255,255,.5)','--cell-mid':'rgba(255,255,255,.68)','--cell-hv':'#fffdf6','--cell-line':'rgba(58,47,34,.09)',
+    '--bar-btm':'rgba(242,237,226,.75)',
+    '--glow1':'rgba(217,142,95,.07)','--glow2':'rgba(146,168,196,.08)',
+  },tracks:[
+    {bg:'#ece1cb',deep:'#8a7351',ink:'#2b2113'},   /* 米杏 */
+    {bg:'#aebfa5',deep:'#5c7357',ink:'#192516'},   /* 灰绿 */
+    {bg:'#93a9c4',deep:'#3f5e83',ink:'#ffffff'},   /* 灰蓝 */
+    {bg:'#d98e5f',deep:'#8e461c',ink:'#ffffff'},   /* 陶土 */
+    {bg:'#e5c6c6',deep:'#a46464',ink:'#331414'},   /* 藕粉 */
+    {bg:'#b6cdc6',deep:'#5f8b7d',ink:'#0f2b25'},   /* 灰青 */
+  ]},
 ];
+let TRACK_COLORS=UI_THEMES[0].tracks;              /* 当前生效的声部色（随主题切换） */
+let themeIdx=0;
+function setTheme(i,quiet){
+  themeIdx=Math.max(0,Math.min(UI_THEMES.length-1,i|0));
+  const th=UI_THEMES[themeIdx];
+  TRACK_COLORS=th.tracks;
+  /* vars 写到根元素上；测试桩没有 documentElement，静默跳过 */
+  if(typeof document!=='undefined'&&document.documentElement&&document.documentElement.style){
+    const st=document.documentElement.style;
+    for(const k in th.vars) st.setProperty(k,th.vars[k]);
+  }
+  if(!quiet){ recolor(); renderTracks(); save(); toast('🎨 配色：'+th.name); }
+}
 
