@@ -193,7 +193,7 @@ const expose=`
   toggleArp,setArpMode,setArpRate,setArpOct,setArpGate,arpRow,arpPoolAt,arpHitIdx,arpOn,arpFires,
   noteDurOf,bpmGetter:()=>bpm,arpOctOf,arpGateOf,
   ARP_MODE_NAME,ARP_MODE_IDS,ARP_RATE_NAME,ARP_RATE_SHORT,ARP_RATES,ARP_OCTS,ARP_GATES,ARP_GATE_SHORT,
-  fillCounter,CTR_INSTS,CTR_PATS,ARR_LAYER,
+  fillCounter,CTR_INSTS,CTR_PATS,ARR_LAYER,BASS_SKEL,BASS_STYLES,PAD_MODES,drumSteps,arrMixOf,roleGrammar,
   setMode:v=>{modeIdx=v;},
   renderTracks,chordTones,followRow,playMidiOf,rowMidi,
   renderMixer,mixerCard:()=>$('mixerCard'),setTrackVol,setTrackPan,setTrackMute,setTrackSolo,setTrackDelay,setTrackFxMix,
@@ -1179,6 +1179,9 @@ console.log('== 19. 🎼 一键编配 v2：分析旋律 → 更贴合的编配 =
   const CENTROID_PAD_MIN=2.4, CENTROID_PAD_MAX=5.6;
   let bassTot=0,bassChord=0,ctrTot=0,ctrChord=0,padTot=0,padChord=0;
   let bassStrongTot=0,bassStrongRoot=0,err=null,created=0,padRounds=0;
+  /* 小节头（每小节第 1 拍）落根音率：v4 低音语法（根五交替 / 走动）会在 2–4 拍走
+     五音三音，所以「和声清楚」的判据落在小节头上，而不是所有强拍。 */
+  let bassHeadTot=0,bassHeadRoot=0;
   let ctrCtrSum=0,ctrCtrN=0,padCtrSum=0,padCtrN=0;
   /* 副旋律的对位质量：走在旋律下方 / 与旋律同度 / 休止（呼吸）比例 */
   let ctrBelow=0,ctrSame=0,ctrRest=0,ctrAll=0;
@@ -1212,6 +1215,12 @@ console.log('== 19. 🎼 一键编配 v2：分析旋律 → 更贴合的编配 =
           bassStrongTot++;
           const set=a[s]; if(!set||!set.size) continue;
           if(T.degOfRow(rr)===rootOfSet(set)) bassStrongRoot++;
+        }
+        for(let s=0;s<N;s+=16){
+          const set=a[s]; if(!set||!set.size) continue;
+          bassHeadTot++;
+          const rr=bass.seq[s];
+          if(rr>=0&&T.degOfRow(rr)===rootOfSet(set)) bassHeadRoot++;
         }
       }
       if(ctr){
@@ -1249,9 +1258,15 @@ console.log('== 19. 🎼 一键编配 v2：分析旋律 → 更贴合的编配 =
   /* 贝斯：绝大多数音落在和弦内（v1 的随机库常落在和弦外） */
   chk('贝斯和弦内音占比 ≥ 95%（实测 '+(100*bassChord/Math.max(1,bassTot)).toFixed(1)+'%）',
       bassTot>0&&bassChord/bassTot>=.95,dbg(probe.join(' ｜ ')));
-  /* 强拍锚在根音：这是低音线「和声清楚」的关键 */
-  chk('贝斯强拍落在和弦根音 ≥ 90%（实测 '+(100*bassStrongRoot/Math.max(1,bassStrongTot)).toFixed(1)+'%）',
-      bassStrongTot>0&&bassStrongRoot/bassStrongTot>=.90,dbg(probe.join(' ｜ ')));
+  /* 强拍锚在根音：这是低音线「和声清楚」的关键。
+     v4 起低音有了风格语法（根五交替 / 走动低音 / 反拍），2–4 拍会走五音三音，
+     所以「强拍 = 根音」不再是 90% 的硬指标；真正必须守住的是**小节头**。 */
+  chk('贝斯小节头（每小节第 1 拍）落在和弦根音 ≥ 95%（实测 '
+      +(100*bassHeadRoot/Math.max(1,bassHeadTot)).toFixed(1)+'%）',
+      bassHeadTot>0&&bassHeadRoot/bassHeadTot>=.95,dbg(probe.join(' ｜ ')));
+  chk('贝斯强拍（每拍首步）落根音 ≥ 55%（其余走五音 / 三音，实测 '
+      +(100*bassStrongRoot/Math.max(1,bassStrongTot)).toFixed(1)+'%）',
+      bassStrongTot>0&&bassStrongRoot/bassStrongTot>=.55,dbg(probe.join(' ｜ ')));
   /* 副旋律：对位线同样必须全在和弦内（撞音会让整条线听起来就是错的） */
   chk('副旋律和弦内音占比 ≥ 95%（实测 '+(100*ctrChord/Math.max(1,ctrTot)).toFixed(1)+'%）',
       ctrTot>0&&ctrChord/ctrTot>=.95);
@@ -1338,6 +1353,78 @@ console.log('== 19. 🎼 一键编配 v2：分析旋律 → 更贴合的编配 =
     tot2++; if(ca2[s]&&ca2[s].has(T.degOfRow(rr))) ok2++;
   }
   chk('换和弦后重新编配 → 副旋律仍 100% 和弦内音（'+ok2+'/'+tot2+'）',tot2>0&&ok2===tot2);
+  /* ---- v4：风格语法（低音语法 / 副旋律节奏库 / 铺底织体 / 音量平衡） ---- */
+  chk('每个风格都声明了合法的低音语法（见 BASS_SKEL）',
+      T.STYLES.every(s=>T.BASS_STYLES.indexOf(s.bass)>=0),
+      T.STYLES.map(s=>s.id+':'+s.bass).join(' '));
+  chk('每个风格都声明了合法的铺底织体',
+      T.STYLES.every(s=>T.PAD_MODES.indexOf(s.pad)>=0),
+      T.STYLES.map(s=>s.id+':'+s.pad).join(' '));
+  chk('每个风格的副旋律节奏库合法（8 步掩码 · 含小节头 · 非全空）',
+      T.STYLES.every(s=>Array.isArray(s.ctrPats)&&s.ctrPats.length
+        &&s.ctrPats.every(p=>Array.isArray(p)&&p.length===8&&p[0]===1
+          &&p.every(v=>v===0||v===1)&&p.some(v=>v===1))),
+      T.STYLES.map(s=>s.id+':'+(s.ctrPats||[]).length).join(' '));
+  chk('每个风格的音量平衡合法且分层（铺底 < 副旋律 < 贝斯 ≤ 1）',
+      T.STYLES.every(s=>Array.isArray(s.mix)&&s.mix.length===3
+        &&s.mix[0]>s.mix[1]&&s.mix[1]>s.mix[2]&&s.mix[2]>=.4&&s.mix[0]<=1),
+      T.STYLES.map(s=>s.id+':['+s.mix+']').join(' '));
+  /* ---- v4：逐风格跑一轮，量化「低频合一 / 线条 / 声部交错 / 力度 / 混音」 ---- */
+  let kickTot=0,kickHit=0,lineTot=0,lineStep=0;
+  let velCnt=0,velBad=0,vStrongSum=0,vStrongN=0,vWeakSum=0,vWeakN=0;
+  let clashTot=0,clashSame=0,mixBad='',dupBad='';
+  const gram=[];
+  for(let sty=0;sty<9;sty++){
+    setup(sty);
+    T.autoArrange();
+    /* 声部列表不许出现同名轨：改风格后重新编配要「就地替换同一角色」，
+       而不是「旧的那条留着 + 再新建一条」（实测过 主旋律,贝斯,副旋律,副旋律,鼓组） */
+    const nm=T.state.tracks.map(t=>t.name);
+    if(new Set(nm).size!==nm.length) dupBad+=T.STYLES[sty].id+'('+nm.join('/')+') ';
+    const bass=T.state.tracks.find(t=>t.name==='贝斯');
+    const ctr=T.state.tracks.find(t=>t.name==='副旋律');
+    const pad=T.state.tracks.find(t=>t.name==='铺底');
+    const dr=T.state.tracks.find(t=>t.kind==='drum');
+    const N=T.stepsOf(bass);
+    /* 低频合一：底鼓落下的位置，贝斯有没有一起发力 */
+    for(const k of T.drumSteps(dr,'kick')){ if(k>=N) continue; kickTot++; if(bass.seq[k]>=0) kickHit++; }
+    /* 线条：相邻低音的音程（以级进 / 小跳为主，别在大跳里乱窜） */
+    let prev=-1;
+    for(let s=0;s<N;s++){
+      const r=bass.seq[s]; if(r<0) continue;
+      if(prev>=0){ lineTot++; if(Math.abs(r-prev)<=4) lineStep++; }
+      prev=r;
+    }
+    /* 力度分层：全部在 [.2,1] 内，且强拍平均 > 弱拍平均 */
+    for(let s=0;s<N;s++){
+      if(bass.seq[s]<0) continue;
+      const v=T.velOf(bass,s);
+      if(v==null||v<.2||v>1) velBad++; else velCnt++;
+      if(s%4===0){ vStrongN++; vStrongSum+=(v||0); } else { vWeakN++; vWeakSum+=(v||0); }
+    }
+    /* 声部交错：副旋律起音与贝斯同一步的比例（撞步会被后移到十六分反拍） */
+    const cN=T.stepsOf(ctr);
+    for(let s=0;s<cN;s++){ if(ctr.seq[s]<0) continue; clashTot++; if(bass.seq[s]>=0) clashSame++; }
+    /* 混音分层：贝斯 > 副旋律 > 铺底（铺底永远垫底） */
+    const vols=[bass,ctr,pad].filter(Boolean).map(t=>t.vol);
+    if(!(vols[0]>vols[1]&&(!vols[2]||vols[1]>vols[2]))||vols.some(v=>!(v>0&&v<=1)))
+      mixBad+=T.STYLES[sty].id+' ';
+    gram.push(T.roleGrammar('bass'));
+  }
+  const kickRate=kickHit/Math.max(1,kickTot), lineRate=lineStep/Math.max(1,lineTot);
+  const clashRate=clashSame/Math.max(1,clashTot);
+  const vS=vStrongSum/Math.max(1,vStrongN), vW=vWeakSum/Math.max(1,vWeakN);
+  chk('低频合一：底鼓落点上的低音命中率 ≥ 45%（实测 '+(100*kickRate).toFixed(1)
+      +'%，'+kickHit+'/'+kickTot+'）',kickTot>0&&kickRate>=.45);
+  chk('低音线条以级进 / 小跳为主（相邻音程 ≤4 行 ≥ 70%，实测 '+(100*lineRate).toFixed(1)+'%）',
+      lineTot>0&&lineRate>=.70);
+  chk('贝斯逐音力度合法（'+velCnt+' 个音，越界 '+velBad+' 个）',velBad===0&&velCnt>0);
+  chk('贝斯力度分层：强拍平均 > 弱拍平均（'+vS.toFixed(2)+' > '+vW.toFixed(2)+'）',vS>vW);
+  chk('声部交错：副旋律与贝斯同刻起音 ≤ 40%（实测 '+(100*clashRate).toFixed(1)
+      +'%，'+clashSame+'/'+clashTot+'）',clashTot>0&&clashRate<=.40);
+  chk('三声部音量按角色分层（贝斯 > 副旋律 > 铺底）',mixBad==='','异常风格：'+mixBad);
+  chk('编配不攒同名声部（同名轨就地复用，改风格后也不会多出一条）',dupBad==='','重复：'+dupBad);
+  chk('提示条按风格显示声部语法（低音语法随风格变化）',new Set(gram).size>=4,gram.join('/'));
   /* 空旋律不应该炸 */
   T.state.tracks.forEach(t=>T.resetSeq(t));
   let noNote=true; try{ T.autoArrange(); }catch(e){ noNote=false; }

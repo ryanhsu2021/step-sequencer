@@ -24,14 +24,18 @@ function seedDefault(){
   }
   recolor();
   /* 用同一套「旋律画像」生成贝斯 / 琶音 / 铺底，保证示例曲一开场就有完整的三层编配。
-     注意 frames 必须是 chordFramesAt() 的「逐步展开」结果——直接把段列表传进去会索引错位。 */
+     注意 frames 必须是 chordFramesAt() 的「逐步展开」结果——直接把段列表传进去会索引错位。
+     顺序与一键编配一致：先落鼓 → 底鼓位置作为贝斯的「低频合一」对齐基准 → 再生成各声部。 */
   const p=state.prog;
   const M=analyzeMelody(mel,chordFramesAt(p,stepsOf(mel)));
-  fillBass(bass,M,p); fillArp(arp,M,p);
-  const padT=state.tracks.find(t=>t.name==='铺底');
-  if(padT) fillPad(padT,M,p);
   const sd=styleDrumPick(1);
   drum.p=sd.p; drum.drum=sd.id;
+  M.kick=drumSteps(drum,'kick');
+  M.taken=new Set(); M.rows=new Set();
+  fillBass(bass,M,p);
+  const padT=state.tracks.find(t=>t.name==='铺底');
+  if(padT){ fillPad(padT,M,p); markPart(M,padT); }
+  fillArp(arp,M,p);
   renderTracks(); save();
 }
 /* 清空音序：所有声部的音符/鼓点清零，声部本身、音色与小节数保留 */

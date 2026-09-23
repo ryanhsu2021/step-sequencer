@@ -1,7 +1,7 @@
 'use strict';
 /* ============================================================
    step-sequencer · 42-arrange
-   🎼 一键编配 v3：先「听懂」主旋律，再生成贝斯 / 副旋律 / 铺底 / 鼓组
+   🎼 一键编配 v4：先「听懂」主旋律，再按**当前风格**生成贝斯 / 副旋律 / 铺底 / 鼓组
    ------------------------------------------------------------
    v1 的缺陷：完全没看主旋律，只按风格的节奏库随机填音。
    v2 的思路（三件事）：
@@ -9,16 +9,23 @@
         音域重心 / 呼吸点」——这是后面所有声部做决定的依据。
      2. 和声锁定 preferProg()：如果用户没手动改过和弦轨，用 deriveProgression()
         从旋律反推一条和声（比纯风格随机更贴合实听），并写明推导来源。
-     3. 各声部各司其职（对位 + 音域避让）：
-          贝斯   ＝ 和声地基：强拍锚在和弦根音，旋律长音/句尾处补五音/三音走动
-          副旋律 ＝ 对位层：一条能独立成句的第二旋律线，永远落在主旋律**下方**，
-                  与它反向 / 斜向进行（旋律上行则副旋律下行或保持），旋律在唱时
-                  让位、旋律停顿换气时接话；全在和弦内，句尾落和弦音
-          铺底   ＝ 长音层：只落在和弦骨架音，躲在贝斯之上、旋律之下
-   v3 的变化：编配不再产出「琶音器」声部（v2 曾把它当织体层，但它与卡片的
-   ARP 开关语义互相纠缠：同名不同义、且写死音高在改和弦后会撞音）。需要琶音
-   时用卡片上的「琶音器」开关或示例曲里那条真琶音声部；编配改用「副旋律」，
-   与主旋律构成对位，听感上比音型化的琶音更「有句子」。
+   v3：编配不再产出「琶音器」（与卡片 ARP 开关语义纠缠），织体层换成「副旋律」。
+   v4（本轮）：把「专业 / 贴风格 / 融合」三件事落到可检验的规则上——
+     · **风格语法**：每个风格都有自己的低音语法（BASS_SKEL：长音 / 根-五 /
+       八分推进 / 反拍 / 驱动 / 稀疏 / 808 长音 / 走动低音）、副旋律节奏库
+       （ctrPats）与铺底织体（pad：持续 / 段首 / 稍晚进 / 反拍短音）。
+       此前副旋律九种风格共用一套节奏型、铺底完全没有风格差异。
+     · **低频合一**：先出鼓、再出贝斯——贝斯主动补在**底鼓落下的位置**，
+       同一风格里「鼓与贝斯一起发力」，低频不再互相错开成一团糊；
+       贝斯线还按「贴着上一个音走」选八度（低音的级进比跳进专业得多）。
+     · **声部交错**：副旋律的起音避让贝斯（撞在一步上时后移到十六分反拍），
+       上行「你进我让」的互补织体；同时避开铺底所占的行（不隔八度重合）。
+     · **融合（混音层）**：三声部各配一条音量（bass > ctr > pad，pad 永远垫底）
+       与一点点声像展开（低音居中、副旋律偏右、铺底偏左），
+       并写入**每步力度**（强拍重、弱拍轻、底鼓处最实、铺底最轻）——
+       各声部听感分层，才是「融而不糊」。
+   v3 的变化：编配不再产出「琶音器」声部（见 6b）。需要琶音时用卡片上的
+   「琶音器」开关或示例曲里那条真琶音声部。
    ============================================================ */
 /* ---------- 通用小工具 ---------- */
 const arrPick=a=>a[(Math.random()*a.length)|0];
@@ -178,6 +185,48 @@ const ARR_LAYER={
   arp: {lo:0,hi:ROWS-4,pref:0,     oct:0},    // 琶音：偏高的织体层（示例曲用，编配已不产出）
   ctr: {lo:0,hi:ROWS-1,pref:ROWS-2,oct:0},    // 副旋律：实际行号由「主旋律行 + 2~4」实时推出，这里只给兜底重心
 };
+/* 三声部的默认音量与声像（风格可用 mix 覆盖音量）：
+   bass > ctr > pad 是刻意的层级——低音与副旋律是「内容」，铺底只是「床」；
+   声像微微展开（低音居中、副旋律偏右、铺底偏左）让三层在立体声里各占一处，
+   比全部居中叠在一起「融而不糊」。 */
+const ARR_MIX={bass:.86,ctr:.79,pad:.58};
+const ARR_PAN={bass:0,ctr:.16,pad:-.16};
+/* 角色音量：风格 mix=[贝斯,副旋律,铺底] 优先，缺省回落到 ARR_MIX */
+function arrMixOf(key){
+  const m=SP_.mix;
+  const i=key==='bass'?0:(key==='ctr'?1:2);
+  const v=(Array.isArray(m)&&typeof m[i]==='number')?m[i]:ARR_MIX[key];
+  return clamp01(v);
+}
+/* 把某声部已占用的「起音步 / 行」登记进 M，供后生成的声部避让（声部交错的依据） */
+function markPart(M,t){
+  if(!M) return;
+  if(!M.taken) M.taken=new Set();
+  if(!M.rows) M.rows=new Set();
+  const n=stepsOf(t);
+  for(let s=0;s<n;s++){ const r=t.seq[s]; if(r<0) continue; M.taken.add(s); M.rows.add(r); }
+}
+/* 提示条里显示的「声部语法」名——让用户一眼看见这次编配用了哪套语法 */
+function roleGrammar(key){
+  if(key==='bass'){
+    const n={long:'长音铺底',root5:'根五交替',eighth:'八分推进',offbeat:'反拍律动',
+             drive:'八分驱动',boom:'稀疏散点',slide:'808 长音',walk:'走动低音'};
+    return n[SP_.bass]||'八分推进';
+  }
+  if(key==='pad'){
+    const n={drone:'持续长音',hold:'段首长音',swell:'稍晚进',stab:'反拍短音'};
+    return n[SP_.pad]||'段首长音';
+  }
+  return '对位线';
+}
+/* 鼓声部某条通道的命中步（低频合一 / 声部交错都要读它） */
+function drumSteps(d,lane){
+  const out=[];
+  if(!d||d.kind!=='drum') return out;
+  const str=(d.p&&d.p[lane])||'', n=stepsOf(d);
+  for(let s=0;s<n;s++) if(str[s]==='x') out.push(s);
+  return out;
+}
 /* 某行在音级空间的实际音高（半音、跨八度不折叠）：相同音级的行靠它分高低 */
 function rowPitch(r){
   const a=ivOf(), L=a.length, i=ROWS-1-r;
@@ -228,97 +277,135 @@ function chordViewAt(prog,n){
   return {ca,root,tones,rootOf:i=>root[clamp(i,0,n-1)],tonesOf:i=>tones[clamp(i,0,n-1)]};
 }
 
-/* 贝斯的「根音行」：优先取离贝斯重心最低处最近的那个根音行 */
-function bassRootRow(s,CV){
-  const lo=ARR_LAYER.bass.lo, hi=ARR_LAYER.bass.hi;
-  return nearestRow(lo,hi,CV.rootOf(s),ARR_LAYER.bass.pref,CV.tonesOf(s));
-}
+/* 贝斯重心行（低音线的兜底起点） */
 
-/* ============ 3. 贝斯：和声地基 ============
-   与 v1 的区别：低音节奏型不再「每段随机抽一条」，而是
-     · 强拍（每拍首步）锚在**和弦根音**上 → 和声最清楚
-     · 弱拍走 和弦五音 / 三音 → 有线条而不是死板的根音小调
-     · 乐句换气处与句尾留白 → 与旋律同呼吸
-     · 长音（≥3 步）下方垫持续根音 → 托住旋律的落音
-     · 只在和弦音内游走，保证零撞音 */
+/* ============ 3. 贝斯：和声地基（风格语法） ============
+   变化（相对 v2 的「一律强拍根音」）：低音不再是「跟着旋律强拍摆根音」，
+   而是每个风格有自己的**低音语法**——氛围的长音、流行的八分推进、电子的反拍、
+   摇滚的八分驱动、嘻哈的稀疏散点、Trap 的 808 长音、爵士的走动低音、
+   民谣的根-五交替。三条通用规则把语法收在专业范围内：
+
+     · 强拍（每小节第 1 拍）永远是根音 → 和声最清楚（也是最强拍根音率的保证）；
+       其余位置按语法走 根音 / 五音 / 三音 / 引导音，全部取自当前和弦，零撞音。
+     · **低频合一**：底鼓落下的地方低音也落下——同一风格里鼓与贝斯一起发力，
+       低频只有一个「发力点」，不再互相错开成一团糊。这是「更融合」最有效的一条。
+     · **线条连接**：每一次选行都贴着上一个低音走（低音的级进比跳进专业得多），
+       而不是每次都回到最低行；跨和弦时优先走「引导音」（下一个和弦根音的
+       下方五度 / 相邻级进，且必须在当前和弦内），把两个和弦缝起来。
+
+   另加：长音（≥3 步）下方垫根音托住旋律、句尾落根音给终止感、
+   以及逐音力度（强拍重 / 弱拍轻 / 底鼓处最实）。 */
+/* 每个小节的起音骨架：off=步偏移、kind=走什么音、pr=采纳概率；
+   hum＝人性化幅度（小节头永远不参与，保证每小节头必落在根音）：
+     sub 改走和弦内另一个音 / drop 留白 / push 抢拍（提前一个 1/16 落下）
+   这三项的存在让「每一次生成都不同」——低音语法不变成死循环的节拍器，
+   ♾ 无限演化改这条声部时才听得出变化。 */
+const BASS_SKEL={
+  long:   {kick:.45,hum:{sub:.25,drop:0,  push:.12},ons:[[0,'root',1],[8,'fifth',.5],[12,'root',.35]]},
+  root5:  {kick:.5, hum:{sub:.22,drop:.05,push:.15},ons:[[0,'root',1],[4,'root',.55],[8,'fifth',1],[12,'fifth',.5]]},
+  eighth: {kick:.6, hum:{sub:.18,drop:.08,push:.12},ons:[[0,'root',1],[2,'root',.7],[4,'fifth',1],[6,'root',.7],
+                                                       [8,'root',1],[10,'root',.7],[12,'fifth',1],[14,'root',.7]]},
+  offbeat:{kick:.85,hum:{sub:.16,drop:.06,push:.06},ons:[[0,'root',1],[2,'root',1],[6,'root',1],[10,'root',1],[14,'root',1]]},
+  drive:  {kick:.8, hum:{sub:.14,drop:.07,push:.08},ons:[[0,'root',1],[2,'root',1],[4,'root',1],[6,'root',1],
+                                                       [8,'fifth',1],[10,'root',1],[12,'root',1],[14,'root',1]]},
+  boom:   {kick:.8, hum:{sub:.3, drop:0,  push:.18},ons:[[0,'root',1],[10,'root',.6]]},
+  slide:  {kick:.9, hum:{sub:.2, drop:0,  push:.14},ons:[[0,'root',1],[8,'root',.75]]},
+  walk:   {kick:.5, hum:{sub:.35,drop:0,  push:.10},ons:[[0,'root',1],[4,'fifth',1],[8,'third',1],[12,'appr',1]]},
+};
+const BASS_STYLES=Object.keys(BASS_SKEL);
+/* 铺底织体模式（见 fillPad） */
+const PAD_MODES=['drone','hold','swell','stab'];
+/* 引导音：走向下一个和弦的「缝」——下方五度优先，其次相邻级进，仍须落在当前和弦内 */
+function bassApproach(s,CV,L,step5){
+  const cur=((CV.rootOf(s)%L)+L)%L;
+  let nx=cur;
+  for(let k=s+1;k<s+9;k++){ const r=((CV.rootOf(k)%L)+L)%L; if(r!==cur){ nx=r; break; } }
+  if(nx===cur) return cur;
+  const cand=[((nx-step5)%L+L)%L,((nx-1)%L+L)%L,((nx+1)%L+L)%L,cur];
+  const tones=(CV.tonesOf(s)||[]).map(d=>((d%L)+L)%L);
+  for(const d of cand) if(tones.indexOf(d)>=0) return d;
+  return cur;
+}
 function fillBass(t,M,prog){
-  const n=stepsOf(t);
+  const n=stepsOf(t), L=M.L, step5=M.step5;
   const {lo:B_LO,hi:B_HI,pref:B_PREF}=ARR_LAYER.bass;
   /* 一切和声判断都走 CV（按本声部步数展开的权威视图），不用 M.rootOf/M.tonesOf */
   const CV=chordViewAt(prog,n);
+  const sk=BASS_SKEL[SP_.bass]||BASS_SKEL.eighth;
+  const thirdOf=s=>{ const tn=CV.tonesOf(s)||[]; return tn.length>1?((tn[1]%L)+L)%L:((CV.rootOf(s)%L)+L)%L; };
   t.seq=new Array(n).fill(-1);
-  const rootRowAt=s=>bassRootRow(s,CV);
-  const degRow=(s,deg,pref)=>nearestRow(B_LO,B_HI,deg,pref,CV.tonesOf(s));
-  /* 强拍之间用「同一和弦里音高最接近的行」接续，线条才走得顺 */
-  const stepFrom=s=>{ if(s<=0) return B_PREF;
-    for(let k=s-1;k>=0&&k>=s-4;k--) if(t.seq[k]>=0) return t.seq[k];
-    return B_PREF; };
-  const usedBeat=new Set();
-  /* --- a) 强拍锚点：根音（一半概率在拍中走五音/三音） --- */
-  for(const o of M.onset){
-    if(o.s%4!==0) continue;                            // 只认拍首，保证强拍 = 根音
-    const b=o.b; if(usedBeat.has(b)) continue;
-    usedBeat.add(b);
-    if(o.s>=n) continue;
-    const row=rootRowAt(o.s);
-    if(Math.random()<.5){                              // 一半概率在 2 步后走个音
-      const s2=o.s+2;
-      if(s2<n&&t.seq[s2]===-1&&!M.gaps.has(s2)){
-        const deg=Math.random()<.6?((CV.rootOf(o.s)+M.step5)%M.L):M.thirdOf(o.s);
-        t.seq[s2]=degRow(o.s,deg,row);
-      }
+  /* 线条连接：优先贴着「上一个低音」选行（找不到就退回贝斯重心） */
+  const prevRowAt=s=>{
+    for(let k=s-1;k>=0&&k>=s-16;k--) if(t.seq[k]>=0) return t.seq[k];
+    for(let k=s+1;k<n&&k<=s+16;k++) if(t.seq[k]>=0) return t.seq[k];
+    return B_PREF;
+  };
+  const place=(s,kind,force)=>{
+    if(s<0||s>=n||t.seq[s]!==-1) return false;
+    /* 小节头是低音的「和声锚点」：即便旋律正好在此换气重入，也要落下去
+       （低音与旋律音区不同，不会盖住它）——旋律强拍根音率因此稳在 ~100%。 */
+    if(!force&&M.gaps.has(s)) return false;
+    const rootD=((CV.rootOf(s)%L)+L)%L;
+    let deg=rootD;
+    if(kind==='fifth') deg=(rootD+step5)%L;
+    else if(kind==='third') deg=thirdOf(s);
+    else if(kind==='appr') deg=bassApproach(s,CV,L,step5);
+    t.seq[s]=nearestRow(B_LO,B_HI,deg,prevRowAt(s),CV.tonesOf(s));
+    return true;
+  };
+  /* --- a) 风格骨架：低音的「语法」（+ 人性化：换音 / 留白 / 抢拍） --- */
+  const hum=sk.hum||{sub:.2,drop:.06,push:.1};
+  for(let b=0;b*BAR<n;b++){
+    for(const [off,kind,pr] of sk.ons){
+      let s=b*BAR+off; if(s>=n) break;
+      const head=(off===0);
+      if(!head&&Math.random()<hum.drop) continue;              // 留白：低音也需要呼吸
+      let k2=kind;
+      if(!head&&Math.random()<hum.sub)                         // 换音：和弦内另一个音
+        k2=(kind==='fifth')?'third':(kind==='third')?'fifth':(Math.random()<.6?'fifth':'third');
+      if(!head&&Math.random()<hum.push&&s-1>=0&&s-1>=b*BAR)     // 抢拍：提前一个 1/16
+        s-=1;
+      if(pr<1&&!head&&Math.random()>pr) continue;
+      place(s,k2,head);                // 小节头强制落下（即便旋律在此换气重入）
     }
-    t.seq[o.s]=row;
   }
-  /* --- b) 长音下方垫根音（旋律拖长时低音给稳定感） --- */
+  /* --- b) 低频合一：底鼓落下的地方低音也落下（鼓与贝斯一起发力） --- */
+  for(const k of (M.kick||[])){
+    if(k>=n) continue;
+    if(Math.random()>sk.kick) continue;
+    place(k,'root');
+  }
+  /* --- c) 长音下方垫根音（旋律拖长时低音给稳定感） --- */
   let run=0;
   for(let s=0;s<=n;s++){
     if(s<n&&M.deg[s]>=0){ run++; continue; }
     if(run>=3){
       for(let k=s-4;k<s;k++){
         if(k<0||k>=n) continue;
-        if(k%2===0&&t.seq[k]===-1&&!M.gaps.has(k)){ t.seq[k]=rootRowAt(k); break; }
+        if(k%2===0&&t.seq[k]===-1&&!M.gaps.has(k)){ t.seq[k]=nearestRow(B_LO,B_HI,((CV.rootOf(k)%L)+L)%L,prevRowAt(k),CV.tonesOf(k)); break; }
       }
     }
     run=0;
   }
-  /* --- c) 弱拍走动：把强拍之间的空位填成「根音 → 五音 / 三音」的推进 --- */
-  if(Math.random()<.6){
-    for(const o of M.onset){
-      const s=o.s; if(s%4!==0||s+2>=n) continue;
-      if(M.gaps.has(s+2)||M.deg[s+2]>=0) continue;     // 旋律在唱 → 低音让位
-      if(t.seq[s+2]!==-1||Math.random()>.55) continue;
-      const deg=Math.random()<.6?((CV.rootOf(s)+M.step5)%M.L):M.thirdOf(s);
-      t.seq[s+2]=degRow(s,deg,t.seq[s]>=0?t.seq[s]:rootRowAt(s));
-    }
-  }
   /* --- d) 句尾：落在该处和弦的根音上（终止感） --- */
   for(const c of M.cad){
-    if(c<n&&t.seq[c]===-1&&!M.gaps.has(c)) t.seq[c]=rootRowAt(c);
+    if(c<n&&t.seq[c]===-1&&!M.gaps.has(c))
+      t.seq[c]=nearestRow(B_LO,B_HI,((CV.rootOf(c)%L)+L)%L,prevRowAt(c),CV.tonesOf(c));
   }
   /* 末步兜底：一定落在和弦音上（优先根音） */
-  if(!t.seq.some(v=>v>=0)||t.seq[n-1]===-1) t.seq[n-1]=rootRowAt(n-1);
-  /* --- e) 律动补充：风格的低音节奏型兜底，只填空位、只取和弦音 --- */
-  const lib=PAT_BASS(); const pat=lib[(Math.random()*lib.length)|0];
-  if(M.dens<.8){
-    for(const o of M.onset){
-      for(let k=0;k<4;k++){
-        const s=o.s+k; if(s>=n) break;
-        const m=pat[k%8]; if(m===undefined) continue;
-        if(t.seq[s]!==-1) continue;
-        if(M.gaps.has(s)) continue;
-        const pref=stepFrom(s);
-        t.seq[s]= m==='f'?degRow(s,(CV.rootOf(s)+M.step5)%M.L,pref)
-                : m==='t'?degRow(s,M.thirdOf(s),pref)
-                : nearestRow(B_LO,B_HI,CV.rootOf(s),pref,CV.tonesOf(s));
-      }
-    }
-  }
-  /* --- f) 收尾闸门：任何一步都不许留下和弦外音（风格库 / 兜底分支的统一保证） --- */
+  if(!t.seq.some(v=>v>=0)||t.seq[n-1]===-1)
+    t.seq[n-1]=nearestRow(B_LO,B_HI,((CV.rootOf(n-1)%L)+L)%L,B_PREF,CV.tonesOf(n-1));
+  /* --- e) 收尾闸门：任何一步都不许留下和弦外音（语法 / 引导音 / 兜底的统一保证） --- */
   for(let s=0;s<n;s++){
     const r=t.seq[s]; if(r<0) continue;
     if(CV.ca[s]&&CV.ca[s].has(M.rowDeg(r))) continue;
-    t.seq[s]=nearestRow(B_LO,B_HI,CV.rootOf(s),B_PREF,CV.tonesOf(s));
+    t.seq[s]=nearestRow(B_LO,B_HI,((CV.rootOf(s)%L)+L)%L,prevRowAt(s),CV.tonesOf(s));
+  }
+  /* --- f) 力度层次：小节头最实、底鼓处实、强拍次之、弱拍轻 --- */
+  t.vel=new Array(n).fill(null);
+  for(let s=0;s<n;s++){
+    if(t.seq[s]<0) continue;
+    t.vel[s]= (s%BAR===0)?.94 : (M.kick&&M.kick.indexOf(s)>=0)?.9 : (s%4===0)?.86 : .74;
   }
   t.last=t.seq.slice();
 }
@@ -466,65 +553,132 @@ function fillCounter(t,M,prog){
         if(prev2>=0) c+=((prev<prev2)===(r<prev))?1.8:0;   // 与上一动同向 → 罚（反向免费）
       }
       if(strong||tail) c+=(d===third||d===fifth)?0:(d===rootD?.8:.3);
+      if(M.rows&&M.rows.has(r)) c+=.9;          // 与铺底占同一行（隔八度重合）→ 轻罚
       if(c<bd){ bd=c; best=r; }
     }
     return best;
   };
-  /* ---- 走位：节奏型给候选位，让位 / 接话 / 呼吸三条限制决定起不起音 ---- */
-  const pats=arrShuffle(CTR_PATS).slice(0,2);
+  /* ---- 走位：风格节奏型给候选位，让位 / 接话 / 交错 / 呼吸四条限制决定起不起音 ---- */
+  const lib=(SP_.ctrPats&&SP_.ctrPats.length)?SP_.ctrPats:CTR_PATS;
+  const pats=arrShuffle(lib).slice(0,2);
+  t.vel=new Array(n).fill(null);
   let lastOn=-99, run=0;
   for(let s=0;s<n;s++){
     if(M.gaps.has(s)) continue;                 // 旋律换气后重新起唱：副旋律让开
-    const sm=clamp(s,0,N-1);
-    const pat=pats[Math.floor(s/(BAR/2))%pats.length]||CTR_PATS[0];
+    const pat=pats[Math.floor(s/(BAR/2))%pats.length]||lib[0];
     if(!pat[s%8]) continue;
+    /* 声部交错：贝斯正在这一步发力 → 后移到十六分反拍（小节 / 半小节头除外，
+       那些位置本来就该一起砸）。「你进我让」比同刻起音清楚得多。 */
+    let cs=s;
+    if(M.taken&&M.taken.has(s)&&s%8!==0&&s+1<n&&t.seq[s+1]===-1&&!M.gaps.has(s+1)) cs=s+1;
+    if(t.seq[cs]!==-1) continue;
+    const sm=clamp(cs,0,N-1);
     /* 旋律在唱 → 只肯隔 3 步以上补一个长音；旋律停顿（holes）→ 自由接话。
        阈值取 3 步（0.75 拍）：再宽下去副旋律会稀疏到几乎听不出是一条线
        （实测 6 步时只剩零星点缀），再紧又会跟主旋律抢拍子。 */
-    if(near[sm]&&!holes.has(sm)&&s-lastOn<3) continue;
+    if(near[sm]&&!holes.has(sm)&&cs-lastOn<3) continue;
     if(run>=3){ run=0; continue; }              // 连续三个音后强制空一拍（留呼吸）
-    const r=pickRow(s,s%4===0,(s===n-1)||M.cad.indexOf(s)>=0);
+    const r=pickRow(cs,s%4===0,(cs===n-1)||M.cad.indexOf(cs)>=0);
     if(r<0) continue;
-    t.seq[s]=r; prev2=prev; prev=r; lastOn=s; run++;
+    t.seq[cs]=r; prev2=prev; prev=r; lastOn=cs; run++;
+    t.vel[cs]= holes.has(sm)?.8:(cs%BAR===0?.82:.68);   // 接话略强、小节头次之、暗位最轻
   }
   /* 末步兜底：一定落音，副旋律才有终止感 */
-  if(t.seq[n-1]===-1) t.seq[n-1]=pickRow(n-1,true,true);
+  if(t.seq[n-1]===-1){ t.seq[n-1]=pickRow(n-1,true,true); t.vel[n-1]=.74; }
+  /* ---- 声部交错后处理：与贝斯撞在同一 1/16 上的音就近错开 ----
+     小节头除外（那里本来就该一起砸）。优先往「旋律不在唱」的空位挪（后移为主，
+     形成「贝斯在前、副旋律在后」的交错织体）；四步内找不到空位就留在原地——
+     宁可偶尔撞一下，也不为了错位把线条拆散。 */
+  if(M.taken&&M.taken.size){
+    const mv=t.seq.slice();
+    for(let s=0;s<n;s++){
+      if(mv[s]<0||!M.taken.has(s)) continue;
+      if(s%BAR===0) continue;                       // 小节头不挪
+      let dst=-1;
+      const root0=((CV.rootOf(s)%L)+L)%L;
+      for(const q of [s+1,s-1,s+2,s-2,s+3]){
+        if(q<0||q>=n||mv[q]!==-1||M.gaps.has(q)||M.taken.has(q)) continue;
+        /* 只在**同一个和弦段内**错位：否则挪过去的音可能已不属于新和弦
+           （实测会让「和弦内音 100%」掉到 98%），宁可留在原地。 */
+        if((((CV.rootOf(q)%L)+L)%L)!==root0) continue;
+        const sm2=clamp(q,0,N-1);
+        if(near[sm2]&&!holes.has(sm2)&&(q-s)>1) continue;    // 旋律在唱时不要挪太远
+        dst=q; break;
+      }
+      if(dst<0) continue;
+      mv[dst]=mv[s]; mv[s]=-1;
+      if(t.vel){ t.vel[dst]=t.vel[s]; t.vel[s]=null; }
+    }
+    if(mv[n-1]===-1){ mv[n-1]=pickRow(n-1,true,true); if(t.vel) t.vel[n-1]=.74; }
+    t.seq=mv;
+  }
   t.last=t.seq.slice();
 }
 
-/* ============ 5. 铺底：长音层 ============
-   只落在和弦骨架音（根音优先，其次五音），每段 1–2 次、长音托住全曲。
-   音域重心居中（ARR_LAYER.pad），落在贝斯之上、琶音之下，形成三层的中间那层。 */
+/* ============ 5. 铺底：长音层（风格织体） ============
+   只落在和弦骨架音（根音优先，其次五音），托住全曲。音域重心居中
+   （ARR_LAYER.pad），落在贝斯之上、副旋律之下，形成三层的中间那层。
+   v4 起按风格的 pad 织体分化（此前九种风格完全一样）：
+     drone 持续长音（氛围 / 国风：段首一个长音，长段中间再叠一次五音）
+     hold  段首长音（最稳的通用床）
+     swell 稍晚进（Trap：错过拍点半步再进来，避开与贝斯的板正感）
+     stab  反拍短音（电子：每拍后半的短音，与贝斯正拍错开，织体「跳」起来）
+   力度永远最轻（.52–.62）——铺底是「床」，不该与人争。 */
 function fillPad(t,M,prog){
   const n=stepsOf(t);
   const {lo:P_LO,hi:P_HI,pref:P_PREF}=ARR_LAYER.pad;
-  prog=progTiled(prog,n);
+  const CV=chordViewAt(prog,n);
+  const tiled=progTiled(prog,n);
+  const mode=SP_.pad||'hold';
   t.seq=new Array(n).fill(-1);
+  const preRow=s=>{ for(let k=s-1;k>=0;k--) if(t.seq[k]>=0) return t.seq[k]; return P_PREF; };
+  /* 段内锚点：段首取重心 P_PREF（不要跨段取「上一个音」——那会让铺底一路往高处
+     累积漂移，实测平均行从 5 掉到 2.05，与「居中偏低」的定位不符） */
+  const put=(s,deg,pref)=>{
+    if(s<0||s>=n||t.seq[s]!==-1) return -1;
+    t.seq[s]=nearestRow(P_LO,P_HI,deg,pref==null?P_PREF:pref,CV.tonesOf(s));
+    return t.seq[s];
+  };
   let base=0;
-  for(const ch of prog){
+  for(const ch of tiled){
     const span=ch.beats*4, ts=ch.tones;
-    if(!ts.length){ base+=span; continue; }
-    /* 段首锚根音，长段再补一次五音；前置条件：该处不能是换气点 */
-    const times=span>=12?2:1;
-    let prev=-1;
-    for(let i=0;i<times;i++){
-      const off=Math.round(i*span/times);
-      let s=base+off;
-      if(s>=n) break;
-      if(M.gaps.has(s)&&s+1<n) s++;                    // 换气点往后挪一步，而不是整段丢掉
-      if(s>=n||M.gaps.has(s)) continue;
-      const deg=(i===0)?ch.root:((ch.root+M.step5)%M.L);
-      t.seq[s]=nearestRow(P_LO,P_HI,deg,prev<0?P_PREF:prev,ts);
-      prev=t.seq[s];
+    if(base>=n) break;
+    let prev=-1;                                  // 本段内的前一个铺底音（段内连接）
+    const seg=(s,deg)=>{ const r=put(s,deg,prev<0?P_PREF:prev); if(r>=0) prev=r; return r; };
+    if(ts&&ts.length){
+      if(mode==='stab'){
+        /* 电子的反拍短音：每拍后半的 8 分位置，根音与五音交替 */
+        for(let k=0;k<span;k++){
+          const s=base+k; if(s>=n) break;
+          if(s%4!==2||M.gaps.has(s)) continue;
+          seg(s,(k%8===2)?ch.root:((ch.root+M.step5)%M.L));
+        }
+      }else{
+        const times=(mode==='drone')?1:(span>=12?(Math.random()<.4?2:1):1);
+        for(let i=0;i<times;i++){
+          let s=base+Math.round(i*span/times);
+          if(mode==='swell'&&i===0) s=Math.min(s+1,n-1);
+          if(s>=n) break;
+          if(M.gaps.has(s)&&s+1<n) s++;
+          if(s>=n||M.gaps.has(s)) continue;
+          seg(s,(i===0)?ch.root:((ch.root+M.step5)%M.L));
+          /* 持续长音：长段中间再叠一次五音（换气感的轻微起伏） */
+          if(mode==='drone'&&span>=16&&Math.random()<.5)
+            put(Math.min(s+Math.floor(span/2),n-1),((ch.root+M.step5)%M.L),null);
+        }
+      }
     }
     base+=span;
     if(base>=n) break;
   }
   /* 末步兜底：一定落在和弦骨架音上 */
   if(!t.seq.some(v=>v>=0)||t.seq[n-1]===-1){
-    const last=prog[prog.length-1]||prog[0];
-    t.seq[n-1]=nearestRow(P_LO,P_HI,last.root,P_HI,last.tones);
+    const last=tiled[tiled.length-1]||tiled[0];
+    if(last) t.seq[n-1]=nearestRow(P_LO,P_HI,last.root,P_HI,last.tones);
   }
+  /* 力度：铺底永远最轻，只在段首（小节头）略抬一点点 */
+  t.vel=new Array(n).fill(null);
+  for(let s=0;s<n;s++) if(t.seq[s]>=0) t.vel[s]= s%BAR===0?.62:.52;
   t.last=t.seq.slice();
 }
 
@@ -547,18 +701,23 @@ const ARP_PATS=[
 const ARP_ORDERS=[[0,1,2],[2,1,0],[0,1,2,1],[1,2,0],[0,2,1]];
 /* 风格自带的节奏库优先，没有则回落到通用库 */
 const patLib=(own,fb)=>(own&&own.length)?own:fb;
-const PAT_BASS=()=>patLib(SP_.bassPats,BASS_PATS);
 const PAT_ARP =()=>patLib(SP_.arpPats,ARP_PATS);
 const PAT_ORD =()=>patLib(SP_.arpOrders,ARP_ORDERS);
 function ensureFreeVoice(role,except){
-  const isFree=x=>x.kind==='inst'&&x!==except&&!x.seq.some(v=>v>=0);
-  let t=state.tracks.find(isFree);
-  if(!t) t=state.tracks.find(x=>x.kind==='inst'&&x!==except&&x.name===role.name);
+  const usable=x=>x.kind==='inst'&&x!==except;
+  const isFree=x=>usable(x)&&!x.seq.some(v=>v>=0);
+  /* 复用顺序很关键（v4 调整）：
+     ① 先找**同名**声部 → 就地重生成。改了风格再点编配时，旧的「副旋律」会被原地替换，
+        而不是「那条留着 + 再新建一条」，声部列表不会攒出两条同名轨；
+     ② 再找空闲声部 → 复用（示例曲里那条空着的「琶音器」轨就是这样被用作副旋律的）；
+     ③ 都没有就新建一条。 */
+  let t=state.tracks.find(x=>usable(x)&&x.name===role.name);
+  if(!t) t=state.tracks.find(isFree);
   if(!t&&state.tracks.length<MAX_TRACKS){
     t=makeTrack('inst',role.name,role.inst,role.oct);
     state.tracks.push(t);
   }
-  if(!t) t=state.tracks.find(x=>x.kind==='inst'&&x!==except);
+  if(!t) t=state.tracks.find(usable);
   if(t){
     recolor(); t.name=role.name; t.inst=role.inst; t.oct=role.oct; t.mute=false; t.solo=false;
     /* 编配产出的是**写死音高的织体线**：如果这条声部原来开着「琶音器」，实际发声
@@ -604,15 +763,19 @@ function pickMelodyTrack(){
   const pool=plain.length?plain:insts;
   return pool.slice().sort((a,b)=>score(b)-score(a)||(barsOf(b)-barsOf(a)))[0];
 }
-/* ============ 6b. 编配产出的声部清单（v3） ============
+/* ============ 6b. 编配产出的声部清单（v4） ============
    贝斯 + 副旋律（+ 风格需要时的铺底）+ 鼓组。**不再产出琶音器**：
      · 一条声部叫「琶音器」而 ARP 开关是灭的，读起来就是同名不同义
        （示例曲里另有一条真·琶音声部，两处含义不同）；
      · 反过来把编配的织体强行开着 ARP，又等于让 ARP 引擎接管它的音高——
        编配写下的织体线只在关掉 ARP 时才是实际发声，语义绕。
-   织体层改由「副旋律」承担后，这个权衡就不存在了：副旋律是一条写死的对位线，
-   生成时所有音都取自当时的和弦，所以改和弦 / 换走向同样协和，而且听感上
-   更像「一条有句子的第二旋律」。 */
+   织体层由「副旋律」承担后，这个权衡就不存在了。
+   v4 的生成顺序（顺序本身就是「融合」的一部分）：
+     ① 先落鼓  → 拿到底鼓位置，作为低音的对齐基准（低频合一）
+     ② 贝斯    → 风格低音语法 + 补在底鼓位 + 登记占用步/行
+     ③ 铺底    → 长音床，最轻，登记占用
+     ④ 副旋律  → 用风格节奏库，避让贝斯（撞步则后移十六分）与铺底行号
+   最后按风格 mix 写三声部音量、按 ARR_PAN 做轻微声像展开。 */
 /* 副旋律的通用音色池（风格没给 ctrI 时的兜底）：偏旋律性、能拉长音 */
 const CTR_INSTS=['strings','cello','flute','epiano','vibes','musicbox','organ','plucksyn','lead'];
 function autoArrange(){
@@ -626,25 +789,35 @@ function autoArrange(){
   const prog=progFor();                       // 以 state.prog 为准（已含 fitProg 的平铺结果）
   const frames=chordFramesAt(prog,stepsOf(mel));
   const M=analyzeMelody(mel,frames);
+  /* ① 先鼓：底鼓位置是「低频合一」与声部交错的基准（鼓组也照当前风格选） */
+  const d=ensureDrum();
+  M.kick=drumSteps(d,'kick');
+  M.taken=new Set(); M.rows=new Set();
   /* 副旋律音色：风格池里挑，避开主旋律已经用着的音色（两条线同音色会糊成一条） */
   const ctrPool=(SP_.ctrI&&SP_.ctrI.length?SP_.ctrI:CTR_INSTS).filter(id=>id!==mel.inst);
   const roles=[
-    {name:'贝斯',inst:arrPick(SP_.bassI||['bass']),oct:ARR_LAYER.bass.oct,fill:fillBass},
-    {name:'副旋律',inst:arrPick(ctrPool.length?ctrPool:CTR_INSTS),oct:ARR_LAYER.ctr.oct,fill:fillCounter},
+    {key:'bass',name:'贝斯',inst:arrPick(SP_.bassI||['bass']),oct:ARR_LAYER.bass.oct,fill:fillBass},
   ];
-  if(SP_.padRole) roles.push({name:'铺底',inst:arrPick(['pad','strings','choir','cello','organ']),oct:ARR_LAYER.pad.oct,fill:fillPad});
+  /* ② 铺底先于副旋律：让副旋律能避开铺底所占的行 */
+  if(SP_.padRole) roles.push({key:'pad',name:'铺底',inst:arrPick(['pad','strings','choir','cello','organ']),oct:ARR_LAYER.pad.oct,fill:fillPad});
+  roles.push({key:'ctr',name:'副旋律',inst:arrPick(ctrPool.length?ctrPool:CTR_INSTS),oct:ARR_LAYER.ctr.oct,fill:fillCounter});
   const made=[];
   for(const role of roles){
     const t=ensureFreeVoice(role,mel);
     if(!t) continue;
-    role.fill(t,M,prog);                          // 写下对位线：音高全部取自当前和弦
-    made.push(t.name+'('+barsOf(t)+'小节)');
+    role.fill(t,M,prog);                          // 写下织体线：音高全部取自当前和弦
+    /* 融合（混音层）：按风格的音量平衡 + 轻微声像展开，而不是全部 .85 / 居中 */
+    t.vol=arrMixOf(role.key); t.pan=ARR_PAN[role.key]||0;
+    busSync(t);
+    markPart(M,t);                                // 登记占用，供后面的声部避让
+    made.push({name:t.name,txt:t.name+'('+barsOf(t)+'小节·'+roleGrammar(role.key)+')'});
   }
-  const d=ensureDrum();
+  const ORDER=['贝斯','副旋律','铺底'];
+  made.sort((a,b)=>ORDER.indexOf(a.name)-ORDER.indexOf(b.name));
   renderTracks();
   save();
   const info='分析「'+mel.name+'」：'+M.onset.length+' 个重音 · '+M.cad.length+' 处句尾'
     +(src.derived?' · 和声由旋律反推':' · 沿用你的和弦轨');
-  toast('🎼 '+STYLE().emoji+' '+info+' → '+(made.length?made.join(' + '):'（无空闲声部）')
-    +(d?' + 鼓组':'')+' ——再点一次会不同（↶ 可撤销）');
+  toast('🎼 '+STYLE().emoji+' '+info+' → '+(made.length?made.map(x=>x.txt).join(' + '):'（无空闲声部）')
+    +(d?' + 鼓组('+d.drum+')':'')+' ——再点一次会不同（↶ 可撤销）');
 }
